@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dunwugudao.replay.mapper.ck.StockBoardRelMapper">
+
+    <select id="selectByTsCodesAndBoardType" resultType="com.dunwugudao.replay.entity.ck.raw.StockBoardRel">
+        SELECT ts_code, board_code, board_name, board_type, is_leader, is_midarm, weight
+        FROM stock_board_rel FINAL
+        WHERE board_type = #{boardType}
+          AND ts_code IN
+          <foreach collection="tsCodes" item="c" open="(" separator="," close=")">#{c}</foreach>
+    </select>
+
+    <select id="countByBoardType" resultType="com.dunwugudao.replay.entity.ck.raw.BoardMemberCount">
+        SELECT board_code AS boardCode, count() AS memberCount
+        FROM stock_board_rel FINAL
+        WHERE board_type = #{boardType}
+        GROUP BY board_code
+    </select>
+
+</mapper>

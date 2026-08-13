@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dunwugudao.replay.mapper.ck.ConceptMapper">
+
+    <resultMap id="BaseResultMap" type="com.dunwugudao.replay.entity.Concept">
+        <id column="theme_code" property="themeCode"/>
+        <result column="theme_name" property="themeName"/>
+        <result column="theme_type" property="themeType"/>
+        <result column="scarcity" property="scarcity"/>
+        <result column="imagination" property="imagination"/>
+        <result column="data_source" property="dataSource"/>
+        <result column="src_detail" property="srcDetail"/>
+        <result column="create_date" property="createDate"/>
+    </resultMap>
+
+    <delete id="deleteAll">
+        ALTER TABLE concept DELETE WHERE 1 = 1
+    </delete>
+
+    <insert id="insertBatch">
+        INSERT INTO concept
+            (theme_code, theme_name, theme_type, scarcity, imagination, data_source, src_detail, create_date)
+        VALUES
+        <foreach collection="list" item="c" separator=",">
+            (#{c.themeCode}, #{c.themeName}, #{c.themeType}, #{c.scarcity}, #{c.imagination},
+             #{c.dataSource}, #{c.srcDetail}, #{c.createDate})
+        </foreach>
+    </insert>
+
+    <select id="selectAll" resultMap="BaseResultMap">
+        SELECT theme_code, theme_name, theme_type, scarcity, imagination, data_source, src_detail, create_date
+        FROM concept FINAL
+    </select>
+
+    <select id="selectRealThemes" resultMap="BaseResultMap">
+        SELECT theme_code, theme_name, theme_type, scarcity, imagination, data_source, src_detail, create_date
+        FROM concept FINAL
+        WHERE theme_type = 'REAL_THEME'
+    </select>
+
+</mapper>

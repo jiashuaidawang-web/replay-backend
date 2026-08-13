@@ -1,0 +1,78 @@
+server:
+  port: 8090
+
+spring:
+  application:
+    name: replay-backend
+  datasource:
+    # ----------------------------------------------------------------------
+    # 双数据源架构（与爬虫工程 crawler-backend-new 保持一致）：
+    #   og（openGauss, @Primary） —— 只支撑「分布式任务行记录」，不参与分析数据读写。
+    #   ch（ClickHouse）          —— 业务数据 / 股票分析数据「全部」走 CK（读原始层 + 写计算层）。
+    # ----------------------------------------------------------------------
+    og:
+      driver-class-name: org.postgresql.Driver
+      jdbc-url: jdbc:postgresql://100.92.86.64:15432/postgres
+      username: dbuser
+      password: OpenGauss@2026
+      maximum-pool-size: 8
+      connection-timeout: 30000
+      # 启动不强制连 OG：openGauss 短暂不可用时，CK-only 的计算层仍可独立运行。
+      # 生产若要求 OG 必须可用，删掉此行（恢复默认 fail-fast）即可。
+      hikari:
+        initialization-fail-timeout: 0
+    ch:
+      driver-class-name: com.clickhouse.jdbc.ClickHouseDriver
+      # 分析型库 crawler；rewrite_batch_inserts 配合 MyBatis BATCH 提升批量写入
+      jdbc-url: jdbc:clickhouse://124.223.220.245:8123/crawler?compress=0&use_server_time_zone=false&rewrite_batch_inserts=true
+      username: default
+      password: pamirs@123
+      maximum-pool-size: 16
+      connection-timeout: 30000
+      # ClickHouse 不支持事务，强制 auto-commit，避免事务管理器误触发 setAutoCommit(false)
+      auto-commit: true
+
+# MyBatis 的 map-underscore-to-camel-case 在 DataSourceConfig 中按 SqlSessionFactory 显式设置，
+# 这里不再由自动配置接管（已排除 MybatisAutoConfiguration）。
+
+# ---------------- 复盘计算参数（阈值集中管理，便于按市场风格调参）----------------
+replay:
+  # 情绪温度（S2）：历史样本不足时用绝对阈值降级，够了自动切分位数
+  sentiment:
+    min-history-days: 60
+    ice-limit-up-max: 30      # <=30 家 → 冰点
+    cold-limit-up-max: 60     # <=60 家 → 偏冷
+    warm-limit-up-max: 100    # <=100 家 → 温和
+    hot-limit-up-max: 150     # <=150 家 → 活跃；再高 → 高潮
+    strong-money-effect: 3.0  # >=3% 赚钱效应强
+    weak-money-effect: -1.0   # <=-1% 亏钱效应
+
+  # 主线识别（S4）
+  mainline:
+    board-type: 3             # 只在概念板块(board_type=3)里找主线；行业板块(2)用于交叉验证
+    min-limit-up: 2           # 板块至少要有几只涨停才有资格进主线候选
+    top-n: 20                 # 输出前 N 个主线
+    weight-limit-up: 0.5      # 涨停家数（归一化后）权重
+    weight-pct-chg: 0.3       # 板块涨幅权重
+    weight-fund: 0.2          # 主力净流入权重
+
+  # 龙头定位（S5）
+  leader:
+    top-n-per-board: 5
+
+  # 炒作因子（S7）：六因子权重，综合分 = Σ(wᵢ·因子ᵢ)/Σwᵢ × 100；缺省等权
+  theme:
+    w-scarcity: 0.2     # 稀缺性：成分股越少越稀缺，越易抱团
+    w-imagination: 0.2  # 想象空间：题材天花板高低
+    w-sudden: 0.2       # 突发性：当日涨停集体启动强度
+    w-certainty: 0.2    # 确定性：题材逻辑当日被市场验证
+    w-min-resist: 0.2   # 最小阻力方向（势）：涨+资金流入+达主线阈值+突发 共振        # 每个主线板块输出前 N 只
+
+  # 启动触发
+  calc:
+    on-startup: true          # 应用启动后对最新交易日跑一轮（端到端验证用）；改为 false 可关闭
+
+  # 分布式任务（OG 行记录）：任务心跳 / 超时判定
+  task:
+    heartbeat-seconds: 60     # 超过该时间未更新 → 任务被认为失联，可被其它节点重新认领
+    max-attempt: 3            # 单日单类型最大重试次数

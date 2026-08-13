@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dunwugudao.replay.mapper.og.ReplayCalcTaskMapper">
+
+    <resultMap id="BaseResultMap" type="com.dunwugudao.replay.entity.og.ReplayCalcTask">
+        <id column="id" property="id"/>
+        <result column="trade_date" property="tradeDate"/>
+        <result column="calc_type" property="calcType"/>
+        <result column="status" property="status"/>
+        <result column="node" property="node"/>
+        <result column="attempt" property="attempt"/>
+        <result column="last_error" property="lastError"/>
+        <result column="created_at" property="createdAt"/>
+        <result column="updated_at" property="updatedAt"/>
+    </resultMap>
+
+    <!-- 初始化待计算任务：唯一键 (trade_date, calc_type) 已存在则不动 -->
+    <insert id="upsertPending">
+        INSERT INTO replay_calc_task (trade_date, calc_type, status, attempt)
+        VALUES (#{tradeDate}, #{calcType}, 0, 0)
+        ON CONFLICT (trade_date, calc_type) DO NOTHING
+    </insert>
+
+    <!-- 乐观锁认领：仅当仍是待计算(0)时才抢占，并递增 attempt -->
+    <update id="claim">
+        UPDATE replay_calc_task
+        SET status = 1,
+            node = #{node},
+            attempt = attempt + 1,
+            updated_at = now()
+        WHERE trade_date = #{tradeDate}
+          AND calc_type = #{calcType}
+          AND status = 0
+    </update>
+
+    <update id="markRunning">
+        UPDATE replay_calc_task
+        SET status = 1, node = #{node}, updated_at = now()
+        WHERE trade_date = #{tradeDate} AND calc_type = #{calcType} AND node = #{node}
+    </update>
+
+    <update id="markDone">
+        UPDATE replay_calc_task
+        SET status = 2, updated_at = now()
+        WHERE trade_date = #{tradeDate} AND calc_type = #{calcType}
+    </update>
+
+    <update id="markFailed">
+        UPDATE replay_calc_task
+        SET status = 3, last_error = #{lastError}, updated_at = now()
+        WHERE trade_date = #{tradeDate} AND calc_type = #{calcType}
+    </update>
+
+    <update id="heartbeat">
+        UPDATE replay_calc_task
+        SET updated_at = now()
+        WHERE trade_date = #{tradeDate} AND calc_type = #{calcType} AND node = #{node}
+    </update>
+
+    <select id="selectByTradeDate" resultMap="BaseResultMap">
+        SELECT id, trade_date, calc_type, status, node, attempt, last_error, created_at, updated_at
+        FROM replay_calc_task
+        WHERE trade_date = #{tradeDate}
+        ORDER BY calc_type
+    </select>
+
+</mapper>

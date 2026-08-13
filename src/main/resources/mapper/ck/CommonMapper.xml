@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dunwugudao.replay.mapper.ck.CommonMapper">
+
+    <select id="latestTradeDate" resultType="java.time.LocalDate">
+        SELECT max(trade_date) FROM
+        <choose>
+            <when test="table == 'limit_up_pool'">limit_up_pool FINAL</when>
+            <when test="table == 'limit_down_pool'">limit_down_pool FINAL</when>
+            <when test="table == 'sentiment_daily'">sentiment_daily FINAL</when>
+            <when test="table == 'main_fund_flow'">main_fund_flow FINAL</when>
+            <when test="table == 'dragon_tiger'">dragon_tiger FINAL</when>
+            <when test="table == 'mainline_daily'">mainline_daily FINAL</when>
+            <when test="table == 'leader_pool_daily'">leader_pool_daily FINAL</when>
+            <when test="table == 'theme_factor_daily'">theme_factor_daily FINAL</when>
+            <otherwise>limit_up_pool FINAL</otherwise>
+        </choose>
+    </select>
+
+</mapper>

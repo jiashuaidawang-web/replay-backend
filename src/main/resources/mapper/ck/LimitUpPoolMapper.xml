@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dunwugudao.replay.mapper.ck.LimitUpPoolMapper">
+
+    <select id="selectByTradeDate" resultType="com.dunwugudao.replay.entity.ck.raw.LimitUpPool">
+        SELECT trade_date, ts_code, stock_name, latest_price, pct_chg,
+               board_pos, limit_style, turnover_rate, board_code, ltsz, amount
+        FROM limit_up_pool FINAL
+        WHERE trade_date = #{tradeDate}
+    </select>
+
+    <select id="selectEnrichedUp" resultType="com.dunwugudao.replay.vo.LimitPoolVO">
+        SELECT lu.ts_code                                                  AS ts_code,
+               lu.stock_name                                               AS stock_name,
+               lu.board_pos                                                AS board_pos,
+               lu.limit_style                                              AS limit_style,
+               lu.pct_chg                                                  AS pct_chg,
+               lu.amount                                                   AS amount,
+               lu.turnover_rate                                            AS turnover_rate,
+               COALESCE(argMax(bb.board_name, bb.board_code), lu.board_code) AS board_name
+        FROM limit_up_pool AS lu FINAL
+                 LEFT JOIN stock_board_rel AS sbr FINAL
+                           ON splitByChar('.', lu.ts_code)[1] = sbr.ts_code AND sbr.board_type = 3
+                 LEFT JOIN board_basic AS bb FINAL
+                           ON sbr.board_code = bb.board_code
+        WHERE lu.trade_date = #{tradeDate}
+        GROUP BY lu.ts_code, lu.stock_name, lu.board_pos, lu.limit_style,
+                 lu.pct_chg, lu.amount, lu.turnover_rate, lu.board_code
+        ORDER BY lu.board_pos DESC NULLS LAST, lu.pct_chg DESC
+    </select>
+
+    <select id="selectMaxTradeDate" resultType="java.time.LocalDate">
+        SELECT max(trade_date) FROM limit_up_pool
+    </select>
+
+</mapper>

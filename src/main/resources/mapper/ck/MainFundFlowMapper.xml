@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dunwugudao.replay.mapper.ck.MainFundFlowMapper">
+
+    <select id="selectBoardFlow" resultType="com.dunwugudao.replay.vo.FundFlowBoardVO">
+        SELECT mff.board_code                                              AS board_code,
+               argMax(mff.name, mff.trade_date)                           AS board_name,
+               sum(mff.main_net)                                          AS main_net,
+               sum(mff.super_big)                                         AS super_big,
+               sum(mff.big_net)                                           AS big_net,
+               argMax(bd.up_count, bd.trade_date)                         AS up_count,
+               argMax(bd.down_count, bd.trade_date)                       AS down_count
+        FROM main_fund_flow AS mff FINAL
+                 LEFT JOIN board_daily AS bd FINAL
+                           ON mff.board_code = bd.board_code AND bd.trade_date = mff.trade_date
+        WHERE mff.trade_date = #{tradeDate}
+          AND mff.board_code IS NOT NULL
+        GROUP BY mff.board_code
+        ORDER BY
+            <choose>
+                <when test="orderBy == 'super_big'">super_big DESC</when>
+                <when test="orderBy == 'big_net'">big_net DESC</when>
+                <otherwise>main_net DESC</otherwise>
+            </choose>
+        LIMIT #{top}
+    </select>
+
+</mapper>

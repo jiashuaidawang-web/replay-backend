@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dunwugudao.replay.mapper.ck.SentimentDailyMapper">
+
+    <resultMap id="BaseResultMap" type="com.dunwugudao.replay.entity.SentimentDaily">
+        <id column="trade_date" property="tradeDate"/>
+        <result column="limit_up_cnt" property="limitUpCnt"/>
+        <result column="limit_down_cnt" property="limitDownCnt"/>
+        <result column="max_board_pos" property="maxBoardPos"/>
+        <result column="yest_limit_ret" property="yestLimitRet"/>
+        <result column="thermal" property="thermal"/>
+        <result column="regime" property="regime"/>
+    </resultMap>
+
+    <insert id="insertBatch">
+        INSERT INTO sentiment_daily
+            (trade_date, limit_up_cnt, limit_down_cnt, max_board_pos, yest_limit_ret, thermal, regime)
+        VALUES
+        <foreach collection="list" item="e" separator=",">
+            (#{e.tradeDate}, #{e.limitUpCnt}, #{e.limitDownCnt}, #{e.maxBoardPos},
+             #{e.yestLimitRet}, #{e.thermal}, #{e.regime})
+        </foreach>
+    </insert>
+
+    <select id="selectByTradeDate" resultMap="BaseResultMap">
+        SELECT trade_date, limit_up_cnt, limit_down_cnt, max_board_pos, yest_limit_ret, thermal, regime
+        FROM sentiment_daily FINAL
+        WHERE trade_date = #{tradeDate}
+    </select>
+
+    <select id="selectAllBefore" resultMap="BaseResultMap">
+        SELECT trade_date, limit_up_cnt, limit_down_cnt, max_board_pos, yest_limit_ret, thermal, regime
+        FROM sentiment_daily FINAL
+        WHERE trade_date &lt; #{tradeDate}
+        ORDER BY trade_date ASC
+    </select>
+
+</mapper>

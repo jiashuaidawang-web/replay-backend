@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dunwugudao.replay.mapper.ck.MainlineDailyMapper">
+
+    <insert id="insertBatch">
+        INSERT INTO mainline_daily
+            (trade_date, board_code, main_level, strength, rank)
+        VALUES
+        <foreach collection="list" item="e" separator=",">
+            (#{e.tradeDate}, #{e.boardCode}, #{e.mainLevel}, #{e.strength}, #{e.rank})
+        </foreach>
+    </insert>
+
+    <select id="selectByTradeDate" resultType="com.dunwugudao.replay.entity.MainlineDaily">
+        SELECT trade_date, board_code, main_level, strength, rank
+        FROM mainline_daily FINAL
+        WHERE trade_date = #{tradeDate}
+        ORDER BY rank ASC
+    </select>
+
+</mapper>

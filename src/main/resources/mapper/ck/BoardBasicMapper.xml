@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dunwugudao.replay.mapper.ck.BoardBasicMapper">
+
+    <select id="selectByBoardType" resultType="com.dunwugudao.replay.entity.ck.raw.BoardBasic">
+        SELECT board_type, code, board_code, board_name, features, status
+        FROM board_basic FINAL
+        WHERE board_type = #{boardType}
+    </select>
+
+    <select id="selectBoardNames" resultType="com.dunwugudao.replay.entity.ck.raw.BoardBasic">
+        SELECT board_code, board_name
+        FROM board_basic FINAL
+        WHERE board_code IN
+        <foreach collection="boardCodes" item="c" open="(" separator="," close=")">#{c}</foreach>
+    </select>
+
+</mapper>
