@@ -14,6 +14,7 @@ import com.dunwugudao.replay.service.MainlineCalculator;
 import com.dunwugudao.replay.service.MainlineResult;
 import com.dunwugudao.replay.service.SentimentCalculator;
 import com.dunwugudao.replay.service.ThemeFactorCalculator;
+import com.dunwugudao.replay.service.TrendCalculator;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -47,6 +48,7 @@ public class ReplayCalcJob {
     private final MainlineCalculator mainlineCalculator;
     private final ConceptDeriveService conceptDeriveService;
     private final ThemeFactorCalculator themeFactorCalculator;
+    private final TrendCalculator trendCalculator;
 
     /** 对指定交易日跑全套计算并落库。 */
     @Transactional(transactionManager = "ckTransactionManager", propagation = Propagation.NOT_SUPPORTED)
@@ -74,6 +76,9 @@ public class ReplayCalcJob {
 
         // ---- S7 炒作因子 ----
         themeFactorCalculator.compute(tradeDate);
+
+        // ---- S6 趋势战法（八大技术特征量化） ----
+        trendCalculator.compute(tradeDate);
 
         log.info("====== 复盘计算结束: {} ======", tradeDate);
     }

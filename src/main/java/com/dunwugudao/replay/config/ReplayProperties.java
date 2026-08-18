@@ -16,6 +16,7 @@ public class ReplayProperties {
     private Mainline mainline = new Mainline();
     private Leader leader = new Leader();
     private Theme theme = new Theme();
+    private Trend trend = new Trend();
 
     @Data
     public static class Sentiment {
@@ -57,5 +58,19 @@ public class ReplayProperties {
         private double wSudden = 0.2;       // 突发性
         private double wCertainty = 0.2;    // 确定性
         private double wMinResist = 0.2;    // 最小阻力方向
+    }
+
+    @Data
+    public static class Trend {
+        /** ③ 健康量价：近 4 周均量 / 前 4 周均量 >= 该值视为放量突破。 */
+        private double volRatio = 1.15;
+        /** ⑤ RS 代理：收盘价 52 周区间相对位置 >= 该值视为领涨（缺 index_weekly 时的代理）。 */
+        private double rsPos = 0.7;
+        /** ⑥ RSI(14) 周线突破该值视为买点信号。 */
+        private double rsiThreshold = 70.0;
+        /** 趋势确认：自大底最低点(52周低)涨幅 % > 该值。 */
+        private double gainThreshold = 25.0;
+        /** 扫描默认最低命中特征数。 */
+        private int minFeature = 6;
     }
 }

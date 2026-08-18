@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dunwugudao.replay.mapper.ck.TrendCandidateDailyMapper">
+
+    <sql id="cols">
+        trade_date, ts_code, stock_name, feature_hit, rs_vs_index, confirmed,
+        f_ma, f_shape, f_vol, f_smallcap, f_rs, f_rsi, f_weekly, f_break,
+        gain_from_bottom, close_price, rsi, ma10, ma30
+    </sql>
+
+    <insert id="insertBatch">
+        INSERT INTO trend_candidate_daily
+        (trade_date, ts_code, stock_name, feature_hit, rs_vs_index, confirmed,
+         f_ma, f_shape, f_vol, f_smallcap, f_rs, f_rsi, f_weekly, f_break,
+         gain_from_bottom, close_price, rsi, ma10, ma30)
+        VALUES
+        <foreach collection="list" item="c" separator=",">
+            (#{c.tradeDate}, #{c.tsCode}, #{c.stockName}, #{c.featureHit}, #{c.rsVsIndex}, #{c.confirmed},
+             #{c.fMa}, #{c.fShape}, #{c.fVol}, #{c.fSmallcap}, #{c.fRs}, #{c.fRsi}, #{c.fWeekly}, #{c.fBreak},
+             #{c.gainFromBottom}, #{c.closePrice}, #{c.rsi}, #{c.ma10}, #{c.ma30})
+        </foreach>
+    </insert>
+
+    <select id="selectByTradeDate" resultType="com.dunwugudao.replay.entity.TrendCandidateDaily">
+        SELECT
+        <include refid="cols"/>
+        FROM trend_candidate_daily FINAL
+        WHERE trade_date = #{tradeDate}
+    </select>
+
+    <select id="selectLatestDate" resultType="java.time.LocalDate">
+        SELECT max(trade_date) FROM trend_candidate_daily FINAL
+    </select>
+
+</mapper>

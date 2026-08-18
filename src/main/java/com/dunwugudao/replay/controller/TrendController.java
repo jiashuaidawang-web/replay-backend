@@ -13,7 +13,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 /**
- * S6 趋势战法 · 趋势股扫描（计算层未实现，当前返回空）。
+ * S6 趋势战法 · 趋势股扫描 / 领涨股监控。
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -27,5 +27,12 @@ public class TrendController {
                                   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
                                   @RequestParam(required = false, defaultValue = "6") int minFeature) {
         return trendService.scan(date, minFeature);
+    }
+
+    @GetMapping("/trend/leading")
+    public List<TrendScanVO> leading(@RequestParam(required = false)
+                                     @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+                                     @RequestParam(required = false, defaultValue = "4") int minFeature) {
+        return trendService.leading(date, minFeature);
     }
 }
