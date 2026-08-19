@@ -6,6 +6,7 @@ import com.dunwugudao.replay.entity.ck.raw.FundFlowAgg;
 import com.dunwugudao.replay.entity.ck.raw.IndexDaily;
 import com.dunwugudao.replay.mapper.ck.IndexDailyMapper;
 import com.dunwugudao.replay.mapper.ck.MainFundFlowMapper;
+import com.dunwugudao.replay.mapper.ck.NewsEventMapper;
 import com.dunwugudao.replay.mapper.ck.SentimentDailyMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -25,8 +26,9 @@ import java.util.stream.Collectors;
  * <p>各维归一 0~1；composite 为加权综合；再据 composite/tech/sentiment 派生牛熊周期
  * （absolute/phase/relative）与策略建议（suggestion）。note 记录数据口径限制，保证结论可解释、可溯源。
  *
- * <p>数据约束（当前快照 2026-08-12）：index_daily 仅约 5 个交易日、main_fund_flow 缺 08-12（回退最近可用日）、
- * news_event 未 seed（政策维中性占位）。算法对缺失做了容错，待历史区间补齐后结论自动更可靠。
+ * <p>数据约束（当前快照 2026-08-19）：index_daily 仅约 5 个交易日、main_fund_flow 缺部分日（回退最近可用日）。
+ * 政策维度已接 news_event（当日 is_policy=1 事件情感分聚合）；news_event 当前为 2026-08 仿真种子事件，
+ * 待用户爬虫灌入真实政策新闻后结论自动更可靠。算法对缺失做了容错，待历史区间补齐后结论自动更可靠。
  */
 @Slf4j
 @Service
@@ -45,6 +47,7 @@ public class FourDimensionCalculator {
     private final SentimentDailyMapper sentimentDailyMapper;
     private final IndexDailyMapper indexDailyMapper;
     private final MainFundFlowMapper mainFundFlowMapper;
+    private final NewsEventMapper newsEventMapper;
 
     public FourDimensionDaily compute(LocalDate tradeDate) {
         FourDimensionDaily r = new FourDimensionDaily();
@@ -64,16 +67,15 @@ public class FourDimensionCalculator {
         BigDecimal tech = computeTech(tradeDate, r);
         BigDecimal fund = computeFund(tradeDate, r);
 
-        // ---- 政策维度：news_event 未 seed，中性占位 ----
-        BigDecimal policy = BigDecimal.valueOf(0.5);
-        r.setNote(appendNote(r.getNote(), "政策维：news_event 未 seed，按中性 0.5（待补）"));
+        // ---- 政策维度：读 news_event 当日政策类事件情感分聚合 ----
+        BigDecimal policy = computePolicy(tradeDate, r);
 
         // ---- 综合分（缺失维自动剔除并重归一）----
         List<double[]> wv = new ArrayList<>();
         if (tech != null) wv.add(new double[]{W_TECH, tech.doubleValue()});
         if (sentiment != null) wv.add(new double[]{W_SENTIMENT, sentiment.doubleValue()});
         if (fund != null) wv.add(new double[]{W_FUND, fund.doubleValue()});
-        wv.add(new double[]{W_POLICY, 0.5}); // 政策恒为中性占位
+        wv.add(new double[]{W_POLICY, policy.doubleValue()});
         double wsum = wv.stream().mapToDouble(a -> a[0]).sum();
         double comp = wv.stream().mapToDouble(a -> a[0] * a[1]).sum() / wsum;
 
@@ -85,8 +87,8 @@ public class FourDimensionCalculator {
 
         // ---- 周期判定 + 策略建议 ----
         deriveCycle(r, tech, r.getComposite(), sentiment);
-        log.info("[S1] 四维度 {}: tech={} sent={} fund={} policy=0.5 comp={} phase={} abs={} worth={}",
-                tradeDate, r.getTech(), r.getSentiment(), r.getFund(), r.getComposite(),
+        log.info("[S1] 四维度 {}: tech={} sent={} fund={} policy={} comp={} phase={} abs={} worth={}",
+                tradeDate, r.getTech(), r.getSentiment(), r.getFund(), r.getPolicy(), r.getComposite(),
                 r.getPhase(), r.getAbsolute(), r.getWorthTrade());
         return r;
     }
@@ -160,6 +162,40 @@ public class FourDimensionCalculator {
         double posRatio = (double) pos / tot;
         double fund = clamp(0.5 + (posRatio - 0.5) * 0.8 + (totalNet >= 0 ? 0.1 : -0.1), 0, 1);
         return round1(fund);
+    }
+
+    /** 政策维度：聚合 news_event 当日政策类事件(is_policy=1)情感分 → 0~1。无事件则中性 0.5。 */
+    private BigDecimal computePolicy(LocalDate tradeDate, FourDimensionDaily r) {
+        // Windows CK 的 JDBC 读偶发失败（连接池中毒/网络抖动），重试 3 次避免误判中性。
+        List<com.dunwugudao.replay.entity.ck.raw.NewsEventRaw> evs = null;
+        boolean ok = false;
+        for (int attempt = 1; attempt <= 3 && !ok; attempt++) {
+            try {
+                evs = newsEventMapper.selectPolicyOn(tradeDate);
+                ok = true;
+            } catch (Exception e) {
+                log.warn("[S1] 读取 news_event 失败(重试 {}/3): {}", attempt, e.getMessage());
+                try { Thread.sleep(800L * attempt); } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                }
+            }
+        }
+        if (!ok || evs == null) {
+            r.setNote(appendNote(r.getNote(), "news_event 读取异常，政策维中性 0.5"));
+            return BigDecimal.valueOf(0.5);
+        }
+        if (evs.isEmpty()) {
+            r.setNote(appendNote(r.getNote(), "当日无政策事件，政策维中性 0.5"));
+            return BigDecimal.valueOf(0.5);
+        }
+        double avg = evs.stream()
+                .filter(e -> e.getSentimentScore() != null)
+                .mapToDouble(e -> e.getSentimentScore().doubleValue())
+                .average().orElse(0.0);
+        BigDecimal policy = round1(clamp(0.5 + 0.5 * avg, 0, 1));
+        r.setNote(appendNote(r.getNote(),
+                String.format("政策维：%d条政策事件, 情感均分=%.2f → 政策强度=%.2f", evs.size(), avg, policy.doubleValue())));
+        return policy;
     }
 
     /** 据综合分/技术分/情绪分派生牛熊周期与策略建议。 */

@@ -13,7 +13,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 /**
- * S5 龙头买卖 · 基于龙头池派生买卖建议。
+ * S5 龙头买卖 · 独立计算层接口。读 leader_trade_daily 表返回买卖建议。
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -23,8 +23,10 @@ public class LeaderTradeController {
     private final LeaderTradeService leaderTradeService;
 
     @GetMapping("/leader/trade-idea")
-    public List<LeaderTradeIdeaVO> tradeIdea(@RequestParam(required = false)
-                                             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
-        return leaderTradeService.tradeIdea(date);
+    public List<LeaderTradeIdeaVO> tradeIdea(
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date,
+            @RequestParam(required = false) String boardCode) {
+        return leaderTradeService.tradeIdea(date, boardCode);
     }
 }

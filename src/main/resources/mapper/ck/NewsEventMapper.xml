@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dunwugudao.replay.mapper.ck.NewsEventMapper">
+
+    <select id="selectPolicyOn" resultType="com.dunwugudao.replay.entity.ck.raw.NewsEventRaw">
+        SELECT event_time,
+               title,
+               category,
+               sentiment_score,
+               is_policy
+        FROM news_event
+        WHERE is_policy = 1
+          AND toDate(event_time) = #{tradeDate}
+        ORDER BY event_time ASC
+    </select>
+
+</mapper>

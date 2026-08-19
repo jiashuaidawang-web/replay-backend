@@ -11,6 +11,7 @@ import com.dunwugudao.replay.mapper.ck.LimitUpPoolMapper;
 import com.dunwugudao.replay.service.CkHttpWriter;
 import com.dunwugudao.replay.service.ConceptDeriveService;
 import com.dunwugudao.replay.service.FourDimensionCalculator;
+import com.dunwugudao.replay.service.LeaderTradeCalculator;
 import com.dunwugudao.replay.service.MainForceCalculator;
 import com.dunwugudao.replay.service.MainlineCalculator;
 import com.dunwugudao.replay.service.MainlineResult;
@@ -50,6 +51,7 @@ public class ReplayCalcJob {
     private final TrendCalculator trendCalculator;
     private final FourDimensionCalculator fourDimensionCalculator;
     private final MainForceCalculator mainForceCalculator;
+    private final LeaderTradeCalculator leaderTradeCalculator;
     private final CkHttpWriter ckHttpWriter;
     /** ch 数据源（ClickHouse）。注入用于瞬态故障后强制清空连接池，避免死连接级联污染后续读取步骤。 */
     @Qualifier("ckDataSource")
@@ -62,6 +64,9 @@ public class ReplayCalcJob {
             "trade_date", "board_code", "main_level", "strength", "rank");
     private static final List<String> LEADER_COLS = List.of(
             "trade_date", "ts_code", "board_code", "board_pos", "role", "score", "cat", "amount", "limit_style", "note");
+    private static final List<String> LEADER_TRADE_COLS = List.of(
+            "trade_date", "ts_code", "board_code", "board_pos", "role", "cat", "score",
+            "action", "signal", "risk_level", "buy_score", "reason", "note");
     private static final List<String> FOUR_COLS = List.of(
             "trade_date", "tech", "sentiment", "fund", "policy", "composite",
             "worth_trade", "phase", "absolute", "relative", "suggestion", "note");
@@ -94,6 +99,7 @@ public class ReplayCalcJob {
         safeStep("题材派生", this::deriveConceptIfEmpty);
         safeStep("S2 情绪温度", () -> computeS2(tradeDate, ups, downs));
         safeStep("S4 主线龙头", () -> computeS4(tradeDate, ups));
+        safeStep("S5 龙头买卖", () -> computeS5(tradeDate));
         safeStep("S7 炒作因子", () -> computeS7(tradeDate));
         safeStep("S1 四维度", () -> computeS1(tradeDate));
         safeStep("S3 主力博弈", () -> computeS3(tradeDate));
@@ -145,8 +151,26 @@ public class ReplayCalcJob {
                 result.getMainlines().size(), result.getLeaders().size(), result.getDemonsWolves().size());
     }
 
-    private void computeS7(LocalDate tradeDate) {
-        List<?> rows = themeFactorCalculator.compute(tradeDate);
+    private void computeS5(LocalDate tradeDate) {
+        List<com.dunwugudao.replay.entity.LeaderTradeDaily> trades = leaderTradeCalculator.compute(tradeDate);
+        if (trades.isEmpty()) {
+            log.info("[S5] {} 无龙头买卖建议（龙头池为空），跳过", tradeDate);
+            return;
+        }
+        List<Object[]> out = new ArrayList<>();
+        for (com.dunwugudao.replay.entity.LeaderTradeDaily t : trades) {
+            out.add(new Object[]{ t.getTradeDate(), t.getTsCode(), t.getBoardCode(), t.getBoardPos(),
+                    t.getRole(), t.getCat(), t.getScore(), t.getAction(), t.getSignal(),
+                    t.getRiskLevel(), t.getBuyScore(), t.getReason(), t.getNote() });
+        }
+        ckHttpWriter.insert("leader_trade_daily", LEADER_TRADE_COLS, out);
+        long buyCnt = trades.stream().filter(t -> "buy".equals(t.getSignal()) || "buy_dip".equals(t.getSignal())).count();
+        long sellCnt = trades.stream().filter(t -> "sell".equals(t.getSignal()) || "reduce".equals(t.getSignal())).count();
+        log.info("[S5] 龙头买卖写入 {} 条 (买/低吸 {} / 卖/减 {} / 观望/持有 {})",
+                trades.size(), buyCnt, sellCnt, trades.size() - buyCnt - sellCnt);
+    }
+
+    private void computeS7(LocalDate tradeDate) {        List<?> rows = themeFactorCalculator.compute(tradeDate);
         if (rows == null || rows.isEmpty()) {
             return;
         }
@@ -222,6 +246,10 @@ public class ReplayCalcJob {
                 allOk = false;
                 safeStepEvictFirst("S4 静默丢重跑", () -> computeS4(tradeDate,
                         safeList(limitUpPoolMapper.selectByTradeDate(tradeDate))));
+            }
+            if (ckHttpWriter.count("leader_trade_daily", tradeDate) == 0) {
+                allOk = false;
+                safeStepEvictFirst("S5 静默丢重跑", () -> computeS5(tradeDate));
             }
             if (ckHttpWriter.count("theme_factor_daily", tradeDate) == 0) {
                 allOk = false;

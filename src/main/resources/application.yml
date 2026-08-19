@@ -33,11 +33,15 @@ spring:
       auto-commit: true
       # Windows CK 偶发 Broken pipe / Connection reset 会污染连接池：借出时用 SELECT 1 校验，
       # 自动剔除死连接；keepalive 主动保活，避免长空闲后被服务端断开。
+      # 注意：实测 Windows 端（NAT/防火墙）会静默断开长空闲连接，Hikari 无法感知 → 复用即报
+      # "Connection is closed"（裸 HTTP 每请求新建连接则 100% 可用）。故 max-lifetime 缩短到
+      # 5 分钟强制周期性重建连接，让池中连接保持新鲜。
       hikari:
         connection-test-query: SELECT 1
         validation-timeout: 5000
         keepalive-time: 30000
-        max-lifetime: 1800000
+        max-lifetime: 300000
+        idle-timeout: 60000
 
 # MyBatis 的 map-underscore-to-camel-case 在 DataSourceConfig 中按 SqlSessionFactory 显式设置，
 # 这里不再由自动配置接管（已排除 MybatisAutoConfiguration）。

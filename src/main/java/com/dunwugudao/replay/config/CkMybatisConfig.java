@@ -39,11 +39,13 @@ import javax.sql.DataSource;
 public class CkMybatisConfig {
 
     @Bean(name = "ckSqlSessionFactory")
-    public SqlSessionFactory ckSqlSessionFactory(@Qualifier("ckDataSource") DataSource dataSource) throws Exception {
+    public SqlSessionFactory ckSqlSessionFactory(@Qualifier("ckDataSource") DataSource dataSource,
+                                                 CkRetryInterceptor ckRetryInterceptor) throws Exception {
         SqlSessionFactoryBean bean = new SqlSessionFactoryBean();
         bean.setDataSource(dataSource);
         bean.setMapperLocations(new PathMatchingResourcePatternResolver()
                 .getResources("classpath*:mapper/ck/*.xml"));
+        bean.setPlugins(new org.apache.ibatis.plugin.Interceptor[]{ckRetryInterceptor});
         org.apache.ibatis.session.Configuration cfg = new org.apache.ibatis.session.Configuration();
         cfg.setMapUnderscoreToCamelCase(true);
         bean.setConfiguration(cfg);

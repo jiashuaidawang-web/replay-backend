@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dunwugudao.replay.mapper.ck.LeaderTradeDailyMapper">
+
+    <select id="selectByTradeDate" resultType="com.dunwugudao.replay.entity.LeaderTradeDaily">
+        SELECT trade_date, ts_code, board_code, board_pos, role, cat, score,
+               action, signal, risk_level, buy_score, reason, note
+        FROM leader_trade_daily FINAL
+        WHERE trade_date = #{tradeDate}
+        ORDER BY buy_score DESC
+    </select>
+
+    <select id="selectByTradeDateAndBoard" resultType="com.dunwugudao.replay.entity.LeaderTradeDaily">
+        SELECT trade_date, ts_code, board_code, board_pos, role, cat, score,
+               action, signal, risk_level, buy_score, reason, note
+        FROM leader_trade_daily FINAL
+        WHERE trade_date = #{tradeDate} AND board_code = #{boardCode}
+        ORDER BY buy_score DESC
+    </select>
+
+</mapper>

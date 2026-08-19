@@ -1,44 +1,59 @@
 package com.dunwugudao.replay.service;
 
-import com.dunwugudao.replay.entity.og.TradeLog;
-import com.dunwugudao.replay.mapper.og.TradeLogMapper;
+import com.dunwugudao.replay.entity.ck.TradeLogCk;
+import com.dunwugudao.replay.mapper.ck.TradeLogCkMapper;
 import com.dunwugudao.replay.vo.DisciplineSummaryVO;
 import com.dunwugudao.replay.vo.TradeLogVO;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
  * S8 交易心法 · 个人交易日志。
  *
- * <p>数据落在 openGauss（og 数据源）：读/写 trade_log 表，并在返回时实时用
- * {@link DisciplineCalculator} 量化每笔纪律分，不另存计算表（个人复盘数据量小、主观标签为主）。
+ * <p>数据落在 ClickHouse（crawler.trade_log，2026-08-19 由 openGauss 迁入）：
+ * <ul>
+ *   <li><b>读</b>：{@link TradeLogCkMapper}（FINAL），返回时实时用 {@link DisciplineCalculator}
+ *       量化每笔纪律分（个人复盘数据量小、主观标签为主，不另存计算表）；</li>
+ *   <li><b>写</b>：{@link CkHttpWriter} 裸 HTTP 直写（避开 JDBC 静默丢；单条 POST 同样走可靠路径），
+ *       id 由应用层生成 UUID，created_at 由 CK DEFAULT now() 填充。</li>
+ * </ul>
  */
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class TradeLogService {
 
-    private final TradeLogMapper tradeLogMapper;
+    /** 插入列清单（不含 created_at/_ver：created_at 走 DEFAULT now()，_ver 为 MATERIALIZED）。 */
+    private static final List<String> INSERT_COLS = List.of(
+            "id", "trade_date", "ts_code", "side", "price", "qty", "reason", "emotion_tag", "reaction");
+
+    private final TradeLogCkMapper tradeLogCkMapper;
+    private final CkHttpWriter ckHttpWriter;
     private final DisciplineCalculator disciplineCalculator;
 
     /** 列表查询（按区间/心态标签），并填充每笔纪律分。 */
     public List<TradeLogVO> list(LocalDate from, LocalDate to, String emotionTag) {
-        return tradeLogMapper.selectByRange(from, to, emotionTag).stream()
+        return tradeLogCkMapper.selectByRange(from, to, emotionTag).stream()
                 .map(this::toVo)
                 .collect(Collectors.toList());
     }
 
-    /** 写入一笔交易记录（OG 事务），回填 id 与纪律分。 */
-    @Transactional
+    /** 写入一笔交易记录（CK 无事务；写后不回表，直接回填 id/createdAt/纪律分）。 */
     public TradeLogVO create(TradeLogVO vo) {
-        TradeLog e = new TradeLog();
+        TradeLogCk e = new TradeLogCk();
+        e.setId(UUID.randomUUID().toString());
         e.setTradeDate(vo.getTradeDate());
         e.setTsCode(vo.getTsCode());
         e.setSide(vo.getSide());
@@ -47,9 +62,9 @@ public class TradeLogService {
         e.setReason(vo.getReason());
         e.setEmotionTag(vo.getEmotionTag());
         e.setReaction(vo.getReaction());
-        tradeLogMapper.insert(e);
+        ckHttpWriter.insert("trade_log", INSERT_COLS, List.<Object[]>of(toRow(e)));
         vo.setId(e.getId());
-        vo.setCreatedAt(e.getCreatedAt());
+        vo.setCreatedAt(OffsetDateTime.now(ZoneId.systemDefault()));
         DisciplineCalculator.DisciplineScore s = disciplineCalculator.score(vo);
         vo.setDisciplineScore(s.getTotal());
         vo.setViolations(s.getViolations());
@@ -58,7 +73,7 @@ public class TradeLogService {
 
     /** 纪律评分汇总（GET /trade-log/discipline）。 */
     public DisciplineSummaryVO discipline(LocalDate from, LocalDate to, String emotionTag) {
-        List<TradeLog> rows = tradeLogMapper.selectByRange(from, to, emotionTag);
+        List<TradeLogCk> rows = tradeLogCkMapper.selectByRange(from, to, emotionTag);
         DisciplineSummaryVO summary = new DisciplineSummaryVO();
         summary.setCount(rows.size());
         if (rows.isEmpty()) {
@@ -103,7 +118,14 @@ public class TradeLogService {
         return summary;
     }
 
-    private TradeLogVO toVo(TradeLog e) {
+    private Object[] toRow(TradeLogCk e) {
+        return new Object[]{
+                e.getId(), e.getTradeDate(), e.getTsCode(), e.getSide(),
+                e.getPrice(), e.getQty(), e.getReason(), e.getEmotionTag(), e.getReaction()
+        };
+    }
+
+    private TradeLogVO toVo(TradeLogCk e) {
         TradeLogVO v = new TradeLogVO();
         v.setId(e.getId());
         v.setTradeDate(e.getTradeDate());
@@ -114,7 +136,8 @@ public class TradeLogService {
         v.setReason(e.getReason());
         v.setEmotionTag(e.getEmotionTag());
         v.setReaction(e.getReaction());
-        v.setCreatedAt(e.getCreatedAt());
+        v.setCreatedAt(e.getCreatedAt() != null
+                ? e.getCreatedAt().atZone(ZoneId.systemDefault()).toOffsetDateTime() : null);
         DisciplineCalculator.DisciplineScore s = disciplineCalculator.score(v);
         v.setDisciplineScore(s.getTotal());
         v.setViolations(s.getViolations());

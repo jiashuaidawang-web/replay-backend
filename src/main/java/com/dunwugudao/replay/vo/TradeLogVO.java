@@ -13,7 +13,7 @@ import java.util.List;
 @Data
 public class TradeLogVO {
 
-    private Long id;
+    private String id;
     private LocalDate tradeDate;
     private String tsCode;
 

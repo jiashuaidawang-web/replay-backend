@@ -3,20 +3,34 @@ package com.dunwugudao.replay.vo;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.math.BigDecimal;
+
 /**
- * 龙头买卖建议视图（S5）。在 LeaderVO 基础上附加基于 role/板位/风格的启发式研判。
- * 注意：idea 为接口层派生提示，非独立计算层产物，仅作复盘参考。
+ * 龙头买卖建议视图（S5）。基于 leader_trade_daily 独立计算层产物。
+ * <p>由 LeaderTradeCalculator 量化：分歧日/一致日/板块高潮/真龙见顶 → 买卖信号 + 评分 + 风险等级。
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
 public class LeaderTradeIdeaVO extends LeaderVO {
 
-    /** 买卖建议文字。 */
+    /** 买卖建议文字（映射 reason）。 */
     private String idea;
 
-    /** 风险等级：低 / 中 / 高。 */
+    /** 操作动作：买入 / 低吸 / 持有 / 减仓 / 卖出 / 观望。 */
+    private String action;
+
+    /** 买卖信号：buy / buy_dip / hold / sell / reduce / watch。 */
+    private String signal;
+
+    /** 风险等级：低 / 中 / 高 / 极高。 */
     private String riskLevel;
 
-    /** 补充说明（如关注的确认信号）。 */
+    /** 买卖评分 0~100（越高越值得操作）。 */
+    private BigDecimal buyScore;
+
+    /** 买卖理由（结构化说明）。 */
+    private String reason;
+
+    /** 补充说明（市场状态/板块强度等上下文）。 */
     private String note;
 }

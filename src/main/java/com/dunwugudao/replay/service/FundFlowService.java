@@ -23,10 +23,20 @@ public class FundFlowService {
     private final MainFundFlowMapper mainFundFlowMapper;
     private final DragonTigerMapper dragonTigerMapper;
 
+    /** boardFlow 排序白名单（防 SQL 注入 + 非法值静默 200）。 */
+    private static final List<String> ALLOWED_ORDER_BY = List.of("main_net", "super_big", "big_net");
+    /** boardFlow top 上限（避免超大 LIMIT + 后续 500 个 IN 回填）。 */
+    private static final int TOP_MAX = 200;
+
     public List<FundFlowBoardVO> boardFlow(LocalDate date, String orderBy, int top) {
         LocalDate d = commonService.resolveDate(date, "main_fund_flow");
-        int t = (top <= 0) ? 10 : top;
-        List<FundFlowBoardVO> list = mainFundFlowMapper.selectBoardFlow(d, t, orderBy);
+        String ob = (orderBy == null || orderBy.isBlank()) ? "main_net" : orderBy;
+        if (!ALLOWED_ORDER_BY.contains(ob)) {
+            throw new IllegalArgumentException(
+                    "orderBy 仅支持: " + String.join(", ", ALLOWED_ORDER_BY));
+        }
+        int t = (top <= 0) ? 10 : Math.min(top, TOP_MAX);
+        List<FundFlowBoardVO> list = mainFundFlowMapper.selectBoardFlow(d, t, ob);
         // main_fund_flow.name 常为 null，统一从 board_basic 回填板块名（与其它接口一致）
         Map<String, String> names = commonService.boardNameMap(
                 list.stream().map(FundFlowBoardVO::getBoardCode).toList());

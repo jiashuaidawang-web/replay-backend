@@ -35,6 +35,10 @@ public class OverviewService {
     private final FourDimensionDailyMapper fourDimensionDailyMapper;
     private final MainlineDailyMapper mainlineDailyMapper;
 
+    /**
+     * 聚合总览：核心数据（四维 + 情绪 + 主线）全部缺失时返回 {@code null}，
+     * 由 Controller 转为 204 No Content（统一"无数据日期"语义）。
+     */
     public OverviewVO build(LocalDate date) {
         LocalDate d = commonService.resolveDate(date, "limit_up_pool");
         OverviewVO vo = new OverviewVO();
@@ -79,6 +83,11 @@ public class OverviewService {
             return v;
         }).toList();
         vo.setTopMainline(mainlineVos.stream().limit(5).toList());
+
+        // 核心三块全无 → 视为"该日无数据"
+        if (fd == null && s == null && mainlineVos.isEmpty()) {
+            return null;
+        }
         return vo;
     }
 }
