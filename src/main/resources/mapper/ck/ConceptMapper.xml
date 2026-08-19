@@ -18,6 +18,10 @@
         ALTER TABLE concept DELETE WHERE 1 = 1
     </delete>
 
+    <select id="count" resultType="int">
+        SELECT count() FROM concept FINAL
+    </select>
+
     <insert id="insertBatch">
         INSERT INTO concept
             (theme_code, theme_name, theme_type, scarcity, imagination, data_source, src_detail, create_date)

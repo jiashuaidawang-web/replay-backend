@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dunwugudao.replay.mapper.ck.MainForceDailyMapper">
+
+    <resultMap id="BaseResultMap" type="com.dunwugudao.replay.entity.MainForceDaily">
+        <id column="trade_date" property="tradeDate"/>
+        <id column="ts_code" property="tsCode"/>
+        <result column="stock_name" property="stockName"/>
+        <result column="reason" property="reason"/>
+        <result column="abnormal_type" property="abnormalType"/>
+        <result column="net_buy" property="netBuy"/>
+        <result column="total_buy" property="totalBuy"/>
+        <result column="total_sell" property="totalSell"/>
+        <result column="buy_seat_cnt" property="buySeatCnt"/>
+        <result column="sell_seat_cnt" property="sellSeatCnt"/>
+        <result column="org_net_buy" property="orgNetBuy"/>
+        <result column="youzi_net_buy" property="youziNetBuy"/>
+        <result column="north_net_buy" property="northNetBuy"/>
+        <result column="consensus_score" property="consensusScore"/>
+        <result column="divergence_flag" property="divergenceFlag"/>
+        <result column="d1_return" property="d1Return"/>
+        <result column="d5_return" property="d5Return"/>
+        <result column="credibility_flag" property="credibilityFlag"/>
+        <result column="change_rate" property="changeRate"/>
+        <result column="close_price" property="closePrice"/>
+        <result column="turnoverrate" property="turnoverrate"/>
+        <result column="note" property="note"/>
+    </resultMap>
+
+    <insert id="insertBatch">
+        INSERT INTO main_force_daily
+            (trade_date, ts_code, stock_name, reason, abnormal_type, net_buy, total_buy, total_sell,
+             buy_seat_cnt, sell_seat_cnt, org_net_buy, youzi_net_buy, north_net_buy,
+             consensus_score, divergence_flag, d1_return, d5_return, credibility_flag,
+             change_rate, close_price, turnoverrate, note)
+        VALUES
+        <foreach collection="list" item="e" separator=",">
+            (#{e.tradeDate,jdbcType=DATE}, #{e.tsCode,jdbcType=VARCHAR}, #{e.stockName,jdbcType=VARCHAR},
+             #{e.reason,jdbcType=VARCHAR}, #{e.abnormalType,jdbcType=VARCHAR},
+             #{e.netBuy,jdbcType=DECIMAL}, #{e.totalBuy,jdbcType=DECIMAL}, #{e.totalSell,jdbcType=DECIMAL},
+             #{e.buySeatCnt,jdbcType=INTEGER}, #{e.sellSeatCnt,jdbcType=INTEGER},
+             #{e.orgNetBuy,jdbcType=DECIMAL}, #{e.youziNetBuy,jdbcType=DECIMAL}, #{e.northNetBuy,jdbcType=DECIMAL},
+             #{e.consensusScore,jdbcType=DOUBLE}, #{e.divergenceFlag,jdbcType=INTEGER},
+             #{e.d1Return,jdbcType=DECIMAL}, #{e.d5Return,jdbcType=DECIMAL}, #{e.credibilityFlag,jdbcType=INTEGER},
+             #{e.changeRate,jdbcType=DECIMAL}, #{e.closePrice,jdbcType=DECIMAL}, #{e.turnoverrate,jdbcType=DECIMAL},
+             #{e.note,jdbcType=VARCHAR})
+        </foreach>
+    </insert>
+
+    <select id="selectByTradeDate" resultMap="BaseResultMap">
+        SELECT trade_date, ts_code, stock_name, reason, abnormal_type, net_buy, total_buy, total_sell,
+               buy_seat_cnt, sell_seat_cnt, org_net_buy, youzi_net_buy, north_net_buy,
+               consensus_score, divergence_flag, d1_return, d5_return, credibility_flag,
+               change_rate, close_price, turnoverrate, note
+        FROM main_force_daily FINAL
+        WHERE trade_date = #{tradeDate}
+        ORDER BY net_buy DESC
+    </select>
+
+</mapper>

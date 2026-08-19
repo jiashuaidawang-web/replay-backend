@@ -20,4 +20,11 @@ public interface MainFundFlowMapper {
     List<FundFlowBoardVO> selectBoardFlow(@Param("tradeDate") LocalDate tradeDate,
                                           @Param("top") int top,
                                           @Param("orderBy") String orderBy);
+
+    /**
+     * 取股票级（obj_type='stock'）主力资金单日聚合，用于 S1 资金维度。
+     * 当 tradeDate 当日无数据（如 08-12 缺资金流）时，自动回退到 <= tradeDate 的最近可用日，
+     * 并返回实际使用的 usedDate，便于在 note 中说明。
+     */
+    com.dunwugudao.replay.entity.ck.raw.FundFlowAgg selectAggOnOrBefore(@Param("tradeDate") LocalDate tradeDate);
 }

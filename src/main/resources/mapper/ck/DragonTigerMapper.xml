@@ -6,7 +6,8 @@
     <select id="selectDragonTiger" resultType="com.dunwugudao.replay.vo.DragonTigerVO">
         SELECT ts_code, stock_name, reason, explanation, abnormal_type,
                net_buy, total_buy, total_sell, billboard_deal_amt,
-               change_rate, close_price, turnoverrate, free_market_cap, d1_close_adjchrate
+               change_rate, close_price, turnoverrate, free_market_cap,
+               d1_close_adjchrate, d5_close_adjchrate
         FROM dragon_tiger FINAL
         WHERE trade_date = #{tradeDate}
         ORDER BY net_buy DESC
@@ -17,6 +18,13 @@
         FROM dt_detail FINAL
         WHERE trade_date = #{tradeDate} AND ts_code = #{tsCode}
         ORDER BY rank ASC
+    </select>
+
+    <select id="selectDtDetailByDate" resultType="com.dunwugudao.replay.vo.DtDetailVO">
+        SELECT ts_code, seat_name, seat_type, rank, buy, sell, net_buy, net_buy_ratio, trade_amt, trade_direction
+        FROM dt_detail FINAL
+        WHERE trade_date = #{tradeDate}
+        ORDER BY ts_code ASC, rank ASC
     </select>
 
 </mapper>

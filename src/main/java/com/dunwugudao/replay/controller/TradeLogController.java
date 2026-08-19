@@ -1,6 +1,7 @@
 package com.dunwugudao.replay.controller;
 
 import com.dunwugudao.replay.service.TradeLogService;
+import com.dunwugudao.replay.vo.DisciplineSummaryVO;
 import com.dunwugudao.replay.vo.TradeLogVO;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -15,7 +16,7 @@ import java.time.LocalDate;
 import java.util.List;
 
 /**
- * S8 交易心法 · 个人交易日志（trade_log 表未创建，GET 空 / POST 未配置）。
+ * S8 交易心法 · 个人交易日志。
  */
 @RestController
 @RequestMapping("/api/v1")
@@ -36,5 +37,15 @@ public class TradeLogController {
     @PostMapping("/trade-log")
     public TradeLogVO create(@RequestBody TradeLogVO vo) {
         return tradeLogService.create(vo);
+    }
+
+    /** 纪律评分汇总（六维度 + 高频违规 + 近 10 笔样本）。 */
+    @GetMapping("/trade-log/discipline")
+    public DisciplineSummaryVO discipline(@RequestParam(required = false)
+                                          @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+                                          @RequestParam(required = false)
+                                          @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+                                          @RequestParam(required = false) String emotionTag) {
+        return tradeLogService.discipline(from, to, emotionTag);
     }
 }

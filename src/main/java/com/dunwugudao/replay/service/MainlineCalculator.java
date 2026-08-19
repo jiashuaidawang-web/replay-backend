@@ -49,7 +49,7 @@ public class MainlineCalculator {
 
     public MainlineResult compute(LocalDate tradeDate, List<LimitUpPool> ups) {
         if (ups == null || ups.isEmpty()) {
-            return new MainlineResult(List.of(), List.of());
+            return new MainlineResult(List.of(), List.of(), List.of());
         }
         int boardType = props.getMainline().getBoardType();
         double w1 = props.getMainline().getWeightLimitUp();
@@ -84,7 +84,7 @@ public class MainlineCalculator {
         }
         if (limitUpCntByBoard.isEmpty()) {
             log.warn("[主线] 无满足 minLimitUp={} 的真题材板块", minLimitUp);
-            return new MainlineResult(List.of(), List.of());
+            return new MainlineResult(List.of(), List.of(), List.of());
         }
 
         // 5) 取这些板块的当日日线（涨幅/资金流）
@@ -156,6 +156,7 @@ public class MainlineCalculator {
                 lp.setBoardCode(boardCode);
                 lp.setBoardPos(pos == 1 ? null : (short) pos); // 首板不记录连板
                 lp.setRole(""); // 排序后回填
+                lp.setCat("龙");
                 lp.setScore(score);
                 // 中间量
                 lp.setStockName(up.getStockName());
@@ -172,9 +173,118 @@ public class MainlineCalculator {
             }
         }
 
-        log.info("[主线] 交易日 {} 识别主线 {} 条, 龙头 {} 只 (board_type={}, minLimitUp={})",
-                tradeDate, mains.size(), leaders.size(), boardType, minLimitUp);
-        return new MainlineResult(mains, leaders);
+        // 9) 妖·独狼增强（S4 板学寻龙）
+        //    板学框架：龙 = 主线板块里被捧上来的明牌龙头（下面有一群小弟）；妖 = 市场高度龙、纯情绪博弈
+        //    （钱少炒不动板块才出妖，常跨多题材、换手充分、人气极高，往往由龙进化而来）；独狼 = 无板块支撑、
+        //    靠自身逻辑独立走强的换手股（从题材活口走出）。
+        //    关键判定：A 股个股被贴上 19~25 个概念标签，几乎所有高位股都「沾边」某主线板块，故不能简单用
+        //    「不属任何主线板块」来判妖/独狼（那样会全部落空）。正确做法：妖/独狼 = 有连板高度、但**未被封为
+        //    主线龙一~龙五**的个股；而连板足够高（≥demonMinPos）的明牌龙头，同时追加「妖」标签（龙妖一身）。
+        //    为保证与龙同行不冲突（排序键 trade_date,ts_code,board_code），妖/独狼统一用哨兵 board_code，
+        //    真实弱板块名存于 board_name 供展示。
+        List<LeaderPoolDaily> demonsWolves = new ArrayList<>();
+        Map<String, List<StockBoardRel>> relsByTs = new LinkedHashMap<>();
+        for (StockBoardRel r : rels) {
+            relsByTs.computeIfAbsent(r.getTsCode(), k -> new ArrayList<>()).add(r);
+        }
+        java.util.Set<String> leaderTs = leaders.stream()
+                .map(LeaderPoolDaily::getTsCode).collect(Collectors.toSet());
+        final String DW_BOARD = "__DW__";
+        int demonMinPos = props.getLeader().getDemonMinPos();
+        int demonMinBoards = props.getLeader().getDemonMinBoards();
+        int wolfMinPos = props.getLeader().getWolfMinPos();
+        int demonTopN = props.getLeader().getDemonTopN();
+        int wolfTopN = props.getLeader().getWolfTopN();
+        for (LimitUpPool up : upByStripped.values()) {
+            int pos = (up.getBoardPos() == null) ? 1 : up.getBoardPos();
+            boolean isLeader = leaderTs.contains(up.getTsCode());
+            boolean isDemon;
+            if (isLeader) {
+                // 已是明牌龙头：只有连板足够高才追加「妖」标签（龙妖一身）；否则仅龙
+                isDemon = pos >= demonMinPos;
+                if (!isDemon) {
+                    continue;
+                }
+            } else {
+                // 非龙头：连板不足直接跳过；够高则为妖，中段为独狼
+                if (pos < wolfMinPos) {
+                    continue;
+                }
+                isDemon = pos >= demonMinPos;
+            }
+            String ts = strip(up.getTsCode());
+            List<StockBoardRel> myRels = relsByTs.getOrDefault(ts, List.of());
+            long boardCnt = myRels.stream().map(StockBoardRel::getBoardCode).distinct().count();
+            boolean isHuanshou = "换手".equals(up.getLimitStyle());
+            double amtYi = (up.getAmount() != null) ? up.getAmount().doubleValue() / 1e8 : 0.0;
+
+            String cat = isDemon ? "妖" : "独狼";
+            String role = isDemon ? "妖股" : "独狼";
+            double raw = isDemon
+                    ? Math.min(100.0, pos * 12.0 + boardCnt * 4.0 + (isHuanshou ? 6.0 : 0.0) + Math.min(amtYi, 8.0))
+                    : Math.min(100.0, pos * 16.0 + (isHuanshou ? 5.0 : 0.0) + Math.min(amtYi, 10.0));
+            BigDecimal score = BigDecimal.valueOf(raw).setScale(2, RoundingMode.HALF_UP);
+
+            // 代表（弱）板块：取该股本日涨停家数最多的概念板块，仅用于展示；落库用哨兵 board_code
+            String repBoardName = "独立（无板块支撑）";
+            StockBoardRel best = null;
+            int bestCnt = -1;
+            for (StockBoardRel r : myRels) {
+                int c = byBoard.getOrDefault(r.getBoardCode(), List.of()).size();
+                if (c > bestCnt) {
+                    bestCnt = c;
+                    best = r;
+                }
+            }
+            if (best != null) {
+                repBoardName = best.getBoardName();
+            }
+
+            StringBuilder note = new StringBuilder();
+            if (isDemon) {
+                note.append(isLeader ? "明牌龙头·叠加市场高度妖性" : "市场高度龙·纯情绪博弈");
+            } else {
+                note.append("独立走势·无板块支撑");
+            }
+            note.append("·").append(pos).append("连板");
+            if (isHuanshou) {
+                note.append("·换手充分");
+            }
+            if (boardCnt >= demonMinBoards) {
+                note.append("·跨").append(boardCnt).append("题材");
+            }
+            if (amtYi >= 10) {
+                note.append("·人气爆棚(").append(String.format("%.0f", amtYi)).append("亿)");
+            }
+
+            LeaderPoolDaily dw = new LeaderPoolDaily();
+            dw.setTradeDate(tradeDate);
+            dw.setTsCode(up.getTsCode());
+            dw.setBoardCode(DW_BOARD);
+            dw.setBoardPos(pos == 1 ? null : (short) pos);
+            dw.setRole(role);
+            dw.setScore(score);
+            dw.setCat(cat);
+            dw.setAmount(up.getAmount());
+            dw.setLimitStyle(up.getLimitStyle());
+            dw.setNote(note.toString());
+            // 中间量（接口/前端展示用）
+            dw.setStockName(up.getStockName());
+            dw.setBoardName(repBoardName);
+            dw.setTurnoverRate(up.getTurnoverRate());
+            demonsWolves.add(dw);
+        }
+        List<LeaderPoolDaily> demons = demonsWolves.stream().filter(d -> "妖".equals(d.getCat()))
+                .sorted(Comparator.comparing(LeaderPoolDaily::getScore).reversed()).limit(demonTopN).toList();
+        List<LeaderPoolDaily> wolves = demonsWolves.stream().filter(d -> "独狼".equals(d.getCat()))
+                .sorted(Comparator.comparing(LeaderPoolDaily::getScore).reversed()).limit(wolfTopN).toList();
+        List<LeaderPoolDaily> finalDW = new ArrayList<>(demons);
+        finalDW.addAll(wolves);
+
+        log.info("[主线] 交易日 {} 识别主线 {} 条, 龙头 {} 只, 妖/独狼 {} 只 (妖{}, 独狼{}) (board_type={}, minLimitUp={})",
+                tradeDate, mains.size(), leaders.size(), finalDW.size(), demons.size(), wolves.size(),
+                boardType, minLimitUp);
+        return new MainlineResult(mains, leaders, finalDW);
     }
 
     /** 去后缀：300686.SZ → 300686。 */

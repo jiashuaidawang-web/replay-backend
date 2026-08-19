@@ -48,6 +48,18 @@ public class ReplayProperties {
     public static class Leader {
         /** 每个主线板块输出前 N 只个股。 */
         private int topNPerBoard = 5;
+
+        // ---- 妖·独狼增强（S4 板学寻龙）----
+        /** 妖股连板高度阈值：脱离板块且连板数 ≥ 此值视为"妖"（纯情绪博弈的市场高度龙）。 */
+        private int demonMinPos = 5;
+        /** 妖股跨题材板块数阈值：个股被贴上 ≥ 此数的真实题材标签，视为"跨多题材"高度龙。 */
+        private int demonMinBoards = 4;
+        /** 独狼最低连板：脱离板块、无主线支撑，但连板数 ≥ 此值（独立换手、有持续性）。 */
+        private int wolfMinPos = 2;
+        /** 妖股输出上限。 */
+        private int demonTopN = 5;
+        /** 独狼输出上限。 */
+        private int wolfTopN = 12;
     }
 
     @Data

@@ -57,10 +57,19 @@ public class MainlineService {
             v.setTsCode(l.getTsCode());
             v.setStockName(stockNames.get(l.getTsCode()));
             v.setBoardCode(l.getBoardCode());
-            v.setBoardName(names.get(l.getBoardCode()));
+            // 妖/独狼用哨兵 __DW__ 避免与龙的主键冲突；该哨兵无对应板块名，展示为"独立"
+            String bn = names.get(l.getBoardCode());
+            if (bn == null && "__DW__".equals(l.getBoardCode())) {
+                bn = "独立";
+            }
+            v.setBoardName(bn != null ? bn : l.getBoardName());
             v.setBoardPos(l.getBoardPos() == null ? null : l.getBoardPos().intValue());
             v.setRole(l.getRole());
+            v.setCat(l.getCat());
             v.setScore(l.getScore());
+            v.setAmount(l.getAmount());
+            v.setLimitStyle(l.getLimitStyle());
+            v.setNote(l.getNote());
             return v;
         }).toList();
     }

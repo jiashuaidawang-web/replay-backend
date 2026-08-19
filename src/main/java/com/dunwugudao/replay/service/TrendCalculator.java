@@ -4,7 +4,6 @@ import com.dunwugudao.replay.config.ReplayProperties;
 import com.dunwugudao.replay.entity.TrendCandidateDaily;
 import com.dunwugudao.replay.entity.ck.raw.StockWeekly;
 import com.dunwugudao.replay.mapper.ck.StockWeeklyMapper;
-import com.dunwugudao.replay.mapper.ck.TrendCandidateDailyMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -36,15 +35,15 @@ import java.util.stream.Collectors;
 public class TrendCalculator {
 
     private final StockWeeklyMapper stockWeeklyMapper;
-    private final TrendCandidateDailyMapper trendCandidateDailyMapper;
     private final ReplayProperties props;
 
-    public void compute(LocalDate tradeDate) {
+    /** 计算某交易日全部个股八大技术特征（落库由 ReplayCalcJob 统一走 HTTP 直写），返回结果列表。 */
+    public List<TrendCandidateDaily> compute(LocalDate tradeDate) {
         LocalDate from = tradeDate.minusDays(420); // ~60 周窗口
         List<StockWeekly> bars = stockWeeklyMapper.selectBarsBetween(from, tradeDate);
         if (bars.isEmpty()) {
             log.warn("[S6] stock_weekly 无 {} 附近数据，跳过趋势计算", tradeDate);
-            return;
+            return List.of();
         }
         Map<String, List<StockWeekly>> byCode = bars.stream()
                 .collect(Collectors.groupingBy(StockWeekly::getTsCode, LinkedHashMap::new, Collectors.toList()));
@@ -66,8 +65,8 @@ public class TrendCalculator {
             out.add(c);
         }
 
-        trendCandidateDailyMapper.insertBatch(out);
-        log.info("[S6] 趋势候选写入 {} 只 (其中趋势成立 {} 只)", out.size(), confirmed);
+        log.info("[S6] 趋势候选计算 {} 只 (其中趋势成立 {} 只)", out.size(), confirmed);
+        return out;
     }
 
     private TrendCandidateDaily eval(List<StockWeekly> series, StockWeekly asOf, LocalDate date, ReplayProperties.Trend t) {

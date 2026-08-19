@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dunwugudao.replay.mapper.ck.IndexDailyMapper">
+
+    <resultMap id="BaseResultMap" type="com.dunwugudao.replay.entity.ck.raw.IndexDaily">
+        <id column="trade_date" property="tradeDate"/>
+        <result column="index_code" property="indexCode"/>
+        <result column="index_name" property="indexName"/>
+        <result column="open" property="open"/>
+        <result column="high" property="high"/>
+        <result column="low" property="low"/>
+        <result column="close" property="close"/>
+        <result column="pre_close" property="preClose"/>
+        <result column="pct_chg" property="pctChg"/>
+        <result column="vol" property="vol"/>
+        <result column="amount" property="amount"/>
+    </resultMap>
+
+    <select id="selectOnOrBefore" resultMap="BaseResultMap">
+        SELECT trade_date, index_code, index_name, open, high, low, close, pre_close, pct_chg, vol, amount
+        FROM index_daily FINAL
+        WHERE trade_date &lt;= #{tradeDate}
+        ORDER BY trade_date ASC
+    </select>
+
+</mapper>

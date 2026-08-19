@@ -22,18 +22,28 @@ public class LeaderPoolDaily {
     /** 连板数。 */
     private Short boardPos;
 
-    /** 角色：龙头 / 中军 / 跟风。 */
+    /** 角色：龙一 / 龙二 … / 妖股 / 独狼。 */
     private String role;
 
     /** 综合得分 0~100。 */
     private BigDecimal score;
 
-    // ---- 中间量，不落库 ----
+    /** 类别：龙 / 妖 / 独狼（便于按猎物类型分组过滤）。 */
+    private String cat;
+
+    /** 成交额（元），代理人气/关注度。 */
+    private BigDecimal amount;
+
+    /** 涨停风格：换手 / 一字。 */
+    private String limitStyle;
+
+    /** 妖/独狼判定说明（如"脱离板块·8连板·换手充分·跨6题材"）。 */
+    private String note;
+
+    // ---- 中间量，不落库（仅接口/前端展示用） ----
 
     private transient String stockName;
     private transient String boardName;
-    private transient String limitStyle;
     private transient Integer openTimes;
     private transient BigDecimal turnoverRate;
-    private transient BigDecimal amount;
 }

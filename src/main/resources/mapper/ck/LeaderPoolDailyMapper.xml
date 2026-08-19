@@ -5,22 +5,23 @@
 
     <insert id="insertBatch">
         INSERT INTO leader_pool_daily
-            (trade_date, ts_code, board_code, board_pos, role, score)
+            (trade_date, ts_code, board_code, board_pos, role, score, cat, amount, limit_style, note)
         VALUES
         <foreach collection="list" item="e" separator=",">
-            (#{e.tradeDate}, #{e.tsCode}, #{e.boardCode}, #{e.boardPos}, #{e.role}, #{e.score})
+            (#{e.tradeDate}, #{e.tsCode}, #{e.boardCode}, #{e.boardPos}, #{e.role}, #{e.score},
+             #{e.cat}, #{e.amount, jdbcType=DECIMAL}, #{e.limitStyle}, #{e.note})
         </foreach>
     </insert>
 
     <select id="selectByTradeDate" resultType="com.dunwugudao.replay.entity.LeaderPoolDaily">
-        SELECT trade_date, ts_code, board_code, board_pos, role, score
+        SELECT trade_date, ts_code, board_code, board_pos, role, score, cat, amount, limit_style, note
         FROM leader_pool_daily FINAL
         WHERE trade_date = #{tradeDate}
         ORDER BY score DESC
     </select>
 
     <select id="selectByTradeDateAndBoard" resultType="com.dunwugudao.replay.entity.LeaderPoolDaily">
-        SELECT trade_date, ts_code, board_code, board_pos, role, score
+        SELECT trade_date, ts_code, board_code, board_pos, role, score, cat, amount, limit_style, note
         FROM leader_pool_daily FINAL
         WHERE trade_date = #{tradeDate} AND board_code = #{boardCode}
         ORDER BY score DESC

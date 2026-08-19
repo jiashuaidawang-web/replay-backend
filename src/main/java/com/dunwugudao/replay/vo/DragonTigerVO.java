@@ -36,4 +36,7 @@ public class DragonTigerVO {
 
     /** 上榜后第 1 日收盘涨跌幅（回测用）。 */
     private BigDecimal d1CloseAdjchrate;
+
+    /** 上榜后第 5 日收盘涨跌幅（回测用）。 */
+    private BigDecimal d5CloseAdjchrate;
 }

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dunwugudao.replay.mapper.og.TradeLogMapper">
+
+    <resultMap id="BaseResultMap" type="com.dunwugudao.replay.entity.og.TradeLog">
+        <id column="id" property="id"/>
+        <result column="trade_date" property="tradeDate"/>
+        <result column="ts_code" property="tsCode"/>
+        <result column="side" property="side"/>
+        <result column="price" property="price"/>
+        <result column="qty" property="qty"/>
+        <result column="reason" property="reason"/>
+        <result column="emotion_tag" property="emotionTag"/>
+        <result column="reaction" property="reaction"/>
+        <result column="created_at" property="createdAt"/>
+    </resultMap>
+
+    <!-- openGauss / PostgreSQL：BIGSERIAL 自增，useGeneratedKeys 回填 id -->
+    <insert id="insert" parameterType="com.dunwugudao.replay.entity.og.TradeLog"
+            useGeneratedKeys="true" keyProperty="id">
+        INSERT INTO trade_log (trade_date, ts_code, side, price, qty, reason, emotion_tag, reaction)
+        VALUES (#{tradeDate}, #{tsCode}, #{side}, #{price}, #{qty}, #{reason}, #{emotionTag}, #{reaction})
+    </insert>
+
+    <select id="selectByRange" resultMap="BaseResultMap">
+        SELECT id, trade_date, ts_code, side, price, qty, reason, emotion_tag, reaction, created_at
+        FROM trade_log
+        <where>
+            <if test="from != null"> AND trade_date &gt;= #{from} </if>
+            <if test="to != null"> AND trade_date &lt;= #{to} </if>
+            <if test="emotionTag != null and emotionTag != ''"> AND emotion_tag = #{emotionTag} </if>
+        </where>
+        ORDER BY trade_date DESC, id DESC
+    </select>
+</mapper>

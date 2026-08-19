@@ -26,4 +26,25 @@
         LIMIT #{top}
     </select>
 
+    <resultMap id="AggResultMap" type="com.dunwugudao.replay.entity.ck.raw.FundFlowAgg">
+        <result column="total_net" property="totalNet"/>
+        <result column="positive_cnt" property="positiveCnt"/>
+        <result column="total_cnt" property="totalCnt"/>
+        <result column="used_date" property="usedDate"/>
+    </resultMap>
+
+    <select id="selectAggOnOrBefore" resultMap="AggResultMap">
+        SELECT sum(mff.main_net)                          AS total_net,
+               countIf(mff.main_net &gt; 0)                AS positive_cnt,
+               count()                                    AS total_cnt,
+               max(mff.trade_date)                        AS used_date
+        FROM main_fund_flow AS mff FINAL
+        WHERE mff.obj_type = 'stock'
+          AND mff.trade_date = (
+              SELECT max(trade_date)
+              FROM main_fund_flow FINAL
+              WHERE obj_type = 'stock' AND trade_date &lt;= #{tradeDate}
+          )
+    </select>
+
 </mapper>

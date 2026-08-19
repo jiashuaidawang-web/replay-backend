@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dunwugudao.replay.mapper.ck.StockDailyMapper">
+
+    <resultMap id="BaseResultMap" type="com.dunwugudao.replay.vo.StockClose">
+        <result column="ts_code" property="tsCode"/>
+        <result column="trade_date" property="tradeDate"/>
+        <result column="close" property="close"/>
+    </resultMap>
+
+    <select id="selectCloses" resultMap="BaseResultMap">
+        SELECT ts_code, trade_date, close
+        FROM stock_daily FINAL
+        WHERE trade_date &gt;= #{fromDate}
+          AND ts_code IN
+        <foreach collection="tsCodes" item="c" open="(" separator="," close=")">
+            #{c}
+        </foreach>
+        ORDER BY ts_code ASC, trade_date ASC
+    </select>
+
+</mapper>

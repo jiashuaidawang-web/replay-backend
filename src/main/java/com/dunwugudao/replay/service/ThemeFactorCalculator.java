@@ -10,7 +10,6 @@ import com.dunwugudao.replay.mapper.ck.BoardDailyMapper;
 import com.dunwugudao.replay.mapper.ck.ConceptMapper;
 import com.dunwugudao.replay.mapper.ck.LimitUpPoolMapper;
 import com.dunwugudao.replay.mapper.ck.StockBoardRelMapper;
-import com.dunwugudao.replay.mapper.ck.ThemeFactorDailyMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -54,14 +53,13 @@ public class ThemeFactorCalculator {
     private final BoardDailyMapper boardDailyMapper;
     private final LimitUpPoolMapper limitUpPoolMapper;
     private final StockBoardRelMapper stockBoardRelMapper;
-    private final ThemeFactorDailyMapper themeFactorDailyMapper;
 
-    /** 计算某交易日全部题材因子并落库，返回写入行数。 */
-    public int compute(LocalDate tradeDate) {
+    /** 计算某交易日全部题材因子（落库由 ReplayCalcJob 统一走 HTTP 直写），返回结果列表。 */
+    public List<ThemeFactorDaily> compute(LocalDate tradeDate) {
         List<Concept> concepts = conceptMapper.selectRealThemes();
         if (concepts.isEmpty()) {
             log.warn("[S7] concept 表无 REAL_THEME，题材派生可能未跑，跳过因子计算");
-            return 0;
+            return List.of();
         }
         Set<String> realCodes = concepts.stream().map(Concept::getThemeCode).collect(Collectors.toSet());
 
@@ -118,13 +116,10 @@ public class ThemeFactorCalculator {
             out.add(f);
         }
 
-        if (!out.isEmpty()) {
-            themeFactorDailyMapper.insertBatch(out);
-        }
         long withLu = out.stream().filter(f -> luByBoard.getOrDefault(f.getBoardCode(), 0L) > 0).count();
         log.info("[S7] 题材炒作因子计算 {} 个题材（交易日 {}，其中当日有涨停 {} 个）",
                 out.size(), tradeDate, withLu);
-        return out.size();
+        return out;
     }
 
     /** 当日各 REAL_THEME 板块涨停家数：limit_up_pool(去后缀) → stock_board_rel(board_type) → 计数。 */

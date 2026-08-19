@@ -17,6 +17,8 @@ public interface ConceptMapper {
 
     int deleteAll();
 
+    int count();
+
     int insertBatch(@Param("list") List<Concept> list);
 
     List<Concept> selectAll();

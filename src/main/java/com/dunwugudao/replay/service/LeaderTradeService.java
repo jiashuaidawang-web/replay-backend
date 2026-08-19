@@ -43,11 +43,21 @@ public class LeaderTradeService {
             v.setBoardName(names.get(l.getBoardCode()));
             v.setBoardPos(l.getBoardPos() == null ? null : l.getBoardPos().intValue());
             v.setRole(l.getRole());
+            v.setCat(l.getCat());
             v.setScore(l.getScore());
 
             int pos = (l.getBoardPos() == null) ? 1 : l.getBoardPos().intValue();
             String role = (l.getRole() == null) ? "" : l.getRole();
-            if (role.contains("中军")) {
+            String cat = (l.getCat() == null) ? "" : l.getCat();
+            if ("妖".equals(cat) || role.contains("妖")) {
+                v.setRiskLevel("极高");
+                v.setIdea("妖股：纯情绪博弈、波动剧烈，仅极限分歧日低吸，严禁一致日追高；随时警惕监管与天地板");
+                v.setNote("妖股靠人气与换手续命，缩量加速或爆量滞涨即离场信号");
+            } else if ("独狼".equals(cat) || role.contains("独狼")) {
+                v.setRiskLevel("中");
+                v.setIdea("独狼：无板块支撑、独立换手走强，不依赖板块节奏，沿自身趋势低吸跟随");
+                v.setNote("独狼不看出板块效应，看个股自身逻辑与换手健康度");
+            } else if (role.contains("中军")) {
                 v.setRiskLevel("低");
                 v.setIdea("中军趋势标的：低吸跟随，不追板");
                 v.setNote("中军稳军心，适合波段");

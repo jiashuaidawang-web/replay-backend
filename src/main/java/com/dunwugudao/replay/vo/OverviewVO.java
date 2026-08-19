@@ -30,4 +30,13 @@ public class OverviewVO {
 
     /** 强度排名前 N 的主线，取自 mainline_daily。 */
     private List<MainlineVO> topMainline;
+
+    /** 是否值得参与（composite >= 0.5）。 */
+    private Integer worthTrade;
+
+    /** 策略建议（中文可读），来自 four_dimension_daily.suggestion。 */
+    private String suggestion;
+
+    /** 数据口径说明，来自 four_dimension_daily.note。 */
+    private String note;
 }

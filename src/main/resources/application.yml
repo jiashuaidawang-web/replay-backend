@@ -31,6 +31,13 @@ spring:
       connection-timeout: 30000
       # ClickHouse 不支持事务，强制 auto-commit，避免事务管理器误触发 setAutoCommit(false)
       auto-commit: true
+      # Windows CK 偶发 Broken pipe / Connection reset 会污染连接池：借出时用 SELECT 1 校验，
+      # 自动剔除死连接；keepalive 主动保活，避免长空闲后被服务端断开。
+      hikari:
+        connection-test-query: SELECT 1
+        validation-timeout: 5000
+        keepalive-time: 30000
+        max-lifetime: 1800000
 
 # MyBatis 的 map-underscore-to-camel-case 在 DataSourceConfig 中按 SqlSessionFactory 显式设置，
 # 这里不再由自动配置接管（已排除 MybatisAutoConfiguration）。

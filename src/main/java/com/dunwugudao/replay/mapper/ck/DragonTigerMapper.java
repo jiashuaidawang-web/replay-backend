@@ -20,4 +20,7 @@ public interface DragonTigerMapper {
     /** 某交易日某股票龙虎榜席位明细（按 rank 升序）。 */
     List<DtDetailVO> selectDtDetail(@Param("tradeDate") LocalDate tradeDate,
                                     @Param("tsCode") String tsCode);
+
+    /** 某交易日全部龙虎榜席位明细（按 ts_code, rank 升序），供 S3 聚合主力博弈与抱团席位。 */
+    List<DtDetailVO> selectDtDetailByDate(@Param("tradeDate") LocalDate tradeDate);
 }
