@@ -23,8 +23,9 @@ spring:
         initialization-fail-timeout: 0
     ch:
       driver-class-name: com.clickhouse.jdbc.ClickHouseDriver
-      # 分析型库 crawler；rewrite_batch_inserts 配合 MyBatis BATCH 提升批量写入
-      jdbc-url: jdbc:clickhouse://124.223.220.245:8123/crawler?compress=0&use_server_time_zone=false&rewrite_batch_inserts=true
+      # 分析型库 crawler（真实库：Windows CK 100.97.74.45，全部表为 ReplacingMergeTree，支持 FINAL）。
+      # ⚠️ 旧 Linux CK 124.223.220.245 是过期副本（表为普通 MergeTree、dragon_tiger 缺列），千万别用，会报 ILLEGAL_FINAL。
+      jdbc-url: jdbc:clickhouse://100.97.74.45:8123/crawler?compress=0&use_server_time_zone=false&rewrite_batch_inserts=true
       username: default
       password: pamirs@123
       maximum-pool-size: 16
