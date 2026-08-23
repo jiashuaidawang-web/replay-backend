@@ -32,12 +32,17 @@ import java.util.concurrent.ConcurrentLinkedQueue;
  *
  * <p><b>契约模型（与 M1 旧"3 全局流"不同）</b>：
  * <ol>
- *   <li>{@code ths:l2:pool}（SET）：订阅股票池，SMEMBERS 发现 + {@code ths:l2:pool:change} Pub/Sub 动态增删；</li>
- *   <li>{@code ths:l2:tick:{code}}（Stream，JiTu）：逐笔成交，仅含 t(当日相对毫秒)/d(B/S)；<b>不含价格与量</b>；
- *       用 XREADGROUP 消费，ACK 保证不丢；</li>
- *   <li>{@code ths:l2:quote:{code}}（<b>Hash，不是 Stream</b>）：盘口快照 tb10_prices/tb10_volumes 等；
+ *   <li>{@code ths:l2:pool}（SET）：订阅股票池，SMEMBERS 发现 + {@code ths:l2:pool:change} Pub/Sub 动态增删；
+ *       <b>成员为裸代码（如 003031，无 .SZ/.SH 后缀）</b>——生产端按裸代码读 pool 并建 key；</li>
+ *   <li>{@code ths:l2:tick:{code}}（Stream，JiTu，code 为裸代码）：逐笔成交，仅含 t(当日相对毫秒)/d(B/S)；
+ *       <b>不含价格与量</b>；用 XREADGROUP 消费，ACK 保证不丢；
+ *       <b>stream 只由生产端 XADD 创建，消费端不建空 stream</b>（无 MKSTREAM），组未就绪前退避等待；</li>
+ *   <li>{@code ths:l2:quote:{code}}（<b>Hash，不是 Stream</b>，code 为裸代码）：盘口快照 tb10_prices/tb10_volumes 等；
  *       用 HGETALL 周期拉取（Hash 无 Stream 语义，无法 XREADGROUP）。</li>
  * </ol>
+ *
+ * <p><b>代码格式桥接</b>：pool/key 用裸代码，下游（TraderEngine/PlanItem/CK）用带后缀代码，
+ * tick 入窗口前经 {@link #withSuffix} 还原后缀。
  *
  * <p><b>价格回贴（关键容错）</b>：JiTu tick 价格恒为 0，消费层在 tick 入窗口前，用该 code 最新 quote 快照的
  * {@code lastPrice} 回贴到 {@code tick.price}（快照缺失则留 0，特征层对"价缺失"降级）。tick 的 volume/amount
@@ -149,8 +154,7 @@ public class RedisStreamConsumer {
                 continue;
             }
             if (activeCodes.add(code)) {
-                ensureGroup(TICK_STREAM + code);
-                startWorker(code);
+                startWorker(code); // 消费组注册由 loop 在 stream 就绪后完成
             }
         }
         for (String code : new ArrayList<>(activeCodes)) {
@@ -178,8 +182,7 @@ public class RedisStreamConsumer {
                     }
                     if ("add".equalsIgnoreCase(action)) {
                         if (activeCodes.add(code)) {
-                            ensureGroup(TICK_STREAM + code);
-                            startWorker(code);
+                            startWorker(code); // 消费组注册由 loop 在 stream 就绪后完成
                             pullQuote(code);
                             log.info("[realtime] pool 新增 {}，已启动消费线程", code);
                         }
@@ -199,11 +202,28 @@ public class RedisStreamConsumer {
         }
     }
 
-    private void ensureGroup(String stream) {
+    /**
+     * 为 tick stream 注册消费组。<b>契约约束：tick stream 只由生产端（爬虫 XADD）创建</b>，
+     * 消费端绝不用 MKSTREAM 建空 stream。故先 EXISTS 探测：stream 不存在 → 返回 false，
+     * 由消费线程退避重试，等生产端首条数据到达后再注册。
+     *
+     * @return true=消费组已就绪（新建成功或已存在）；false=stream 尚不存在，待重试。
+     */
+    private boolean ensureGroup(String stream) {
         try {
+            if (!Boolean.TRUE.equals(redis.hasKey(stream))) {
+                return false; // 生产端还没 XADD，不建空 stream
+            }
             redis.opsForStream().createGroup(stream, ReadOffset.latest(), group);
+            return true;
         } catch (Exception e) {
-            // BUSYGROUP 已存在 → 忽略
+            String msg = String.valueOf(e.getMessage());
+            if (msg.contains("BUSYGROUP")) {
+                return true; // 组已存在
+            }
+            // 连接类异常等：下次循环重试
+            log.debug("[realtime] 注册消费组失败 stream={}: {}", stream, msg);
+            return false;
         }
     }
 
@@ -230,8 +250,19 @@ public class RedisStreamConsumer {
                 StreamOffset.create(tickStream, ReadOffset.lastConsumed()));
         // 连续失败次数（用于指数退避）；任何一次成功读即归零。
         int consecutiveFails = 0;
+        // 消费组就绪标记：stream 由生产端创建，未就绪前退避等待，不发 XREADGROUP。
+        boolean groupReady = false;
         while (running && activeCodes.contains(code)) {
             try {
+                if (!groupReady) {
+                    groupReady = ensureGroup(tickStream);
+                    if (!groupReady) {
+                        // 生产端尚未推流：低频等待（不打日志，盘中模块本就可能整天无数据）
+                        Thread.sleep(5_000L);
+                        continue;
+                    }
+                    log.info("[realtime] tick stream 已就绪，开始消费 code={}", code);
+                }
                 List<MapRecord<String, String, String>> records = redis.opsForStream().read(
                         Consumer.from(group, consumerName + "-" + code),
                         org.springframework.data.redis.connection.stream.StreamReadOptions.empty()
@@ -255,6 +286,10 @@ public class RedisStreamConsumer {
             } catch (Exception e) {
                 if (running) {
                     consecutiveFails++;
+                    // NOGROUP（生产端重建了 stream / 组被删）→ 回到未就绪态，下轮重新注册
+                    if (String.valueOf(e.getMessage()).contains("NOGROUP")) {
+                        groupReady = false;
+                    }
                     // 首次失败：单机只打一条「进入待命态」WARN（多线程抢 CAS，败者静默）；
                     // 后续退避并降为 debug，避免几百个线程每秒刷满日志。
                     if (consecutiveFails == 1) {
@@ -298,7 +333,7 @@ public class RedisStreamConsumer {
         try {
             Tick t = mapper.readValue(payload, Tick.class);
             if (t.getTsCode() == null || t.getTsCode().isBlank()) {
-                t.setTsCode(code); // 用 stream key 补全
+                t.setTsCode(withSuffix(code)); // pool/stream key 是裸代码，补后缀供下游匹配
             }
             // 价格回贴：JiTu 无价，用最新 quote 快照 lastPrice 兜底
             Quote q = quoteCache.get(code);
@@ -344,6 +379,27 @@ public class RedisStreamConsumer {
         } catch (Exception e) {
             log.debug("[realtime] 拉取 quote 失败 code={}: {}", code, e.getMessage());
         }
+    }
+
+    /**
+     * 裸代码（003031）补交易所后缀（003031.SZ）：6 开头→SH，0/3→SZ，4/8/92→BJ。
+     * pool 契约是裸代码（生产端按裸代码读 pool、建 tick/quote key），
+     * 但下游 TraderEngine/PlanItem 用 CK 约定的带后缀代码，故在 tick 入窗口前还原。
+     */
+    static String withSuffix(String bare) {
+        if (bare == null || bare.isBlank() || bare.contains(".")) {
+            return bare;
+        }
+        if (bare.startsWith("6")) {
+            return bare + ".SH";
+        }
+        if (bare.startsWith("0") || bare.startsWith("3")) {
+            return bare + ".SZ";
+        }
+        if (bare.startsWith("4") || bare.startsWith("8") || bare.startsWith("92")) {
+            return bare + ".BJ";
+        }
+        return bare;
     }
 
     /** Hash value → JSON 字面量：数字原样，其它加引号。 */

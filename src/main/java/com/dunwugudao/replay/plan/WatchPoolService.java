@@ -267,19 +267,30 @@ public class WatchPoolService {
         return dot > 0 ? code.substring(0, dot) : code;
     }
 
-    /** 清空旧 pool → SADD 真实 code → PUBLISH pool:change(add) 通知消费端。 */
+    /**
+     * 清空旧 pool → SADD 真实 code → PUBLISH pool:change(add) 通知消费端。
+     * <b>契约：pool 成员为裸代码（无 .SZ/.SH 后缀）</b>——生产端（爬虫）按裸代码读 pool、
+     * 建 ths:l2:tick:{裸码} / ths:l2:quote:{裸码} key。CK/狙击圈侧仍用带后缀代码，此处出闸前统一去后缀。
+     */
     private void syncRedis(Set<String> codes) {
         try {
+            Set<String> bareCodes = new TreeSet<>();
+            for (String c : codes) {
+                String bare = stripSuffix(c);
+                if (!bare.isBlank()) {
+                    bareCodes.add(bare);
+                }
+            }
             redis.delete(POOL_KEY);
-            if (!codes.isEmpty()) {
-                redis.opsForSet().add(POOL_KEY, codes.toArray(new String[0]));
+            if (!bareCodes.isEmpty()) {
+                redis.opsForSet().add(POOL_KEY, bareCodes.toArray(new String[0]));
             }
             // 通知消费端动态加载（每条一个 add 事件，幂等）
-            for (String code : codes) {
+            for (String code : bareCodes) {
                 redis.convertAndSend(POOL_CHANGE_CHANNEL,
                         String.format("{\"action\":\"add\",\"code\":\"%s\"}", code));
             }
-            log.info("[watch-pool] Redis {} 已清空并重填 {} 支真实观察标的", POOL_KEY, codes.size());
+            log.info("[watch-pool] Redis {} 已清空并重填 {} 支真实观察标的（裸代码）", POOL_KEY, bareCodes.size());
         } catch (Exception e) {
             log.error("[watch-pool] 同步 Redis pool 失败：{}", e.getMessage());
         }
