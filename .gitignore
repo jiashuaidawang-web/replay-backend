@@ -38,3 +38,6 @@ nbdist/
 
 *.log
 tmp/
+
+# macOS
+.DS_Store
