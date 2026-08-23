@@ -154,7 +154,14 @@ public class WatchPoolService {
             it.add("S5", reason);
         }
 
-        // ---- S7 强题材 → 展开成个股 ----
+        // ---- S7 强题材 → 题材共振增强（不新增股票）----
+        // 收口决策（2026-08-23 用户拍板）：S7 强题材若展开全部成分股会爆炸（实测 08-21 达 3262 支，
+        // 狙击圈/L2 消费端均不可承受）。改为：只给【已被 S4/S5 选中、且属于某强题材】的股票追加
+        // S7 共振标签与理由——即「题材内龙头」自然保留，纯题材成分股不进池。池规模 = S4∪S5。
+        Map<String, WatchItem> byBareCode = new LinkedHashMap<>();
+        for (WatchItem it : merged.values()) {
+            byBareCode.put(stripSuffix(it.tsCode), it);
+        }
         for (ThemeFactorDaily s7 : s7Mapper.selectByTradeDate(date)) {
             if (s7.getBoardCode() == null) {
                 continue;
@@ -164,17 +171,15 @@ public class WatchPoolService {
                 continue;
             }
             List<String> members = watchMapper.selectBoardMembers(s7.getBoardCode());
-            String themeReason = String.format("题材六因子强(total=%.0f)", total);
+            String themeReason = String.format("题材六因子强(total=%.0f)·题材共振", total);
             for (String ts : members) {
                 if (ts == null || ts.isBlank()) {
                     continue;
                 }
-                WatchItem it = merged.computeIfAbsent(ts, k -> new WatchItem());
-                it.tsCode = ts;
-                if (it.boardCode.isBlank()) {
-                    it.boardCode = s7.getBoardCode();
+                WatchItem it = byBareCode.get(stripSuffix(ts));
+                if (it != null) {
+                    it.add("S7", themeReason);
                 }
-                it.add("S7", themeReason);
             }
         }
 

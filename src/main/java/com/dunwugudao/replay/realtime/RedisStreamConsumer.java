@@ -55,6 +55,10 @@ public class RedisStreamConsumer {
     private static final String QUOTE_HASH = "ths:l2:quote:";       // + code （Hash，非 Stream）
     private static final String POOL_CHANGE_CHANNEL = "ths:l2:pool:change";
 
+    /** Redis 不可达时的指数退避参数（避免几百个线程同时死磕 Redis → 日志/连接风暴）。 */
+    private static final long BACKOFF_BASE_MS = 1000L;
+    private static final long BACKOFF_MAX_MS = 30_000L;
+
     private final StringRedisTemplate redis;
     private final TickWindow window;
     private final TickArchiver tickArchiver;
@@ -212,6 +216,8 @@ public class RedisStreamConsumer {
         String tickStream = TICK_STREAM + code;
         List<StreamOffset<String>> offsets = List.of(
                 StreamOffset.create(tickStream, ReadOffset.lastConsumed()));
+        // 连续失败次数（用于指数退避）；任何一次成功读即归零。
+        int consecutiveFails = 0;
         while (running && activeCodes.contains(code)) {
             try {
                 List<MapRecord<String, String, String>> records = redis.opsForStream().read(
@@ -229,11 +235,20 @@ public class RedisStreamConsumer {
                         }
                     }
                 }
+                // 成功读到（含空）即视为连通，归零退避。
+                consecutiveFails = 0;
             } catch (Exception e) {
                 if (running) {
-                    log.warn("[realtime] Redis Stream 读取异常 code={}（将重试）: {}", code, e.getMessage());
+                    consecutiveFails++;
+                    // 首次失败打 WARN 提示；后续退避并降为 debug，避免几百个线程每秒刷满日志。
+                    if (consecutiveFails == 1) {
+                        log.warn("[realtime] Redis Stream 读取异常 code={}（将退避重试）: {}", code, e.getMessage());
+                    } else {
+                        log.debug("[realtime] Redis Stream 读取异常 code={} 第{}次（退避中）: {}",
+                                code, consecutiveFails, e.getMessage());
+                    }
                     try {
-                        Thread.sleep(1000);
+                        sleepBackoff(consecutiveFails);
                     } catch (InterruptedException ie) {
                         Thread.currentThread().interrupt();
                         break;
@@ -241,6 +256,14 @@ public class RedisStreamConsumer {
                 }
             }
         }
+    }
+
+    /** 指数退避 + 抖动：base·2^(n-1)，封顶 BACKOFF_MAX_MS，并加 ±25% 抖动错开各线程重试峰。 */
+    private void sleepBackoff(int consecutiveFails) throws InterruptedException {
+        long exp = BACKOFF_BASE_MS * (1L << Math.min(consecutiveFails - 1, 30)); // 2^(n-1)，防溢出
+        long capped = Math.min(exp, BACKOFF_MAX_MS);
+        long jitter = (long) (capped * 0.25 * Math.random()); // 0~25% 正偏抖动
+        Thread.sleep(Math.min(capped + jitter, BACKOFF_MAX_MS));
     }
 
     /** 处理单条 tick：解析 JiTu → 回贴 quote 最新价 → 入窗口 + 归档队列。 */

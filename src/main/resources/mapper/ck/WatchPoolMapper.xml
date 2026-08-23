@@ -10,13 +10,13 @@
     </select>
 
     <select id="selectStockNames" resultType="java.util.HashMap">
-        SELECT split_part(ts_code, '.', 1) AS ts_code, argMax(stock_name, trade_date) AS stock_name
+        SELECT splitByChar('.', ts_code)[1] AS ts_code, argMax(stock_name, trade_date) AS stock_name
         FROM stock_daily FINAL
-        WHERE split_part(ts_code, '.', 1) IN
+        WHERE splitByChar('.', ts_code)[1] IN
         <foreach collection="codes" item="c" open="(" separator="," close=")">
             #{c}
         </foreach>
-        GROUP BY split_part(ts_code, '.', 1)
+        GROUP BY splitByChar('.', ts_code)[1]
     </select>
 
     <select id="selectBySelDate" resultType="com.dunwugudao.replay.mapper.ck.WatchPoolRow">
