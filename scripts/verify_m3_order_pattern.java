@@ -30,6 +30,14 @@ public class verify_m3_order_pattern {
         return M.readValue(json, Tick.class);
     }
 
+    /** JiTu 现状 tick：价格/量均为 0（消费层回贴前），只有方向与时间。 */
+    static Tick jituTick(long ts, String d) throws Exception {
+        String json = String.format(
+                "{\"tsCode\":\"600519\",\"t\":%d,\"p\":0.0,\"v\":0,\"d\":\"%s\",\"a\":0.0}",
+                ts, d);
+        return M.readValue(json, Tick.class);
+    }
+
     public static void main(String[] args) throws Exception {
         Config cfg = new Config(30, 10000, 10, 200, 0.15, 500000);
         long now = 1_700_000_000_000L;
@@ -71,6 +79,17 @@ public class verify_m3_order_pattern {
         Result r4 = OrderPatternAnalyzer.analyze(normal, now - 60_000, now, cfg);
         System.out.println("[NORMAL] pattern=" + r4.orderPattern());
         assert r4.orderPattern().equals("NORMAL") : "NORMAL got " + r4.orderPattern();
+
+        // 5. JiTu 量全 0 降级：价格平稳密集主买 → 不得误判 STEALTH/SWEEP/SELF_TRADE（量缺失应退化 NORMAL）
+        List<Tick> jitu = new ArrayList<>();
+        for (int i = 0; i < 60; i++) jitu.add(jituTick(now - 20_000 + i * 300, "B"));
+        // 即便价格回贴为同一值（平稳），量缺失 → NORMAL
+        for (Tick t : jitu) t.setPrice(18.5);
+        Result r5 = OrderPatternAnalyzer.analyze(jitu, now - 60_000, now, cfg);
+        System.out.println("[JITU_DEGRADED] pattern=" + r5.orderPattern() + " sweep=" + r5.sweepDensity() + " self=" + r5.selfTradeRatio());
+        assert r5.orderPattern().equals("NORMAL") : "JITU_DEGRADED got " + r5.orderPattern();
+        assert r5.selfTradeRatio() == 0.0 : "JITU selfTradeRatio should be 0";
+        assert r5.stealthNetBuy() == 0.0 : "JITU stealthNet should be 0";
 
         System.out.println("ALL M3 ASSERTIONS PASSED ✅");
     }

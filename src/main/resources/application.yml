@@ -105,6 +105,7 @@ replay:
     feature-interval-ms: 3000 # 特征计算周期（决策输入节拍）
     tick-window-seconds: 900  # 内存滚动窗口保留时长（15 分钟），用于算大单净主动买入
     pool-refresh-ms: 30000    # 兜底刷新 ths:l2:pool 股票池的周期（防 pub/sub 丢消息导致不一致）
+    quote-refresh-ms: 1000    # 周期拉取 ths:l2:quote:{code}（Hash，非 Stream，只能轮询）快照的周期；tick 价格回贴依赖它
     xtrim-max-len: 10000      # 收盘 XTRIM 单股逐笔流保留条数（对齐同花顺契约 v1.0）
     # ---------------- M3 拆单识别阈值 ----------------
     stealth-window-sec: 30        # 拆单识别窗口（秒）：统计同向小单累计量

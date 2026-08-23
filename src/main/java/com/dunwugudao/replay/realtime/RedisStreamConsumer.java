@@ -14,7 +14,6 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.listener.ChannelTopic;
 import org.springframework.data.redis.listener.RedisMessageListenerContainer;
 import org.springframework.data.redis.listener.Topic;
-import org.springframework.data.redis.serializer.RedisSerializer;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -29,18 +28,22 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 
 /**
- * Redis 消费者（盘中实时 L2 采集入口）—— 对齐「同花顺 L2 Redis 数据契约 v1.0」。
+ * Redis 消费者（盘中实时 L2 采集入口）—— 对齐 {@code REDIS_DATA_FORMAT.md} 实测契约。
  *
- * <p><b>范式变更</b>：契约是「每支股票一个 Stream」模型（{@code ths:l2:tick:{code}} / {@code ths:l2:quote:{code}}），
- * 与 M1 的「3 个全局流」不同。本类改为：
+ * <p><b>契约模型（与 M1 旧"3 全局流"不同）</b>：
  * <ol>
- *   <li>从 {@code ths:l2:pool}（SET）发现订阅股票池；</li>
- *   <li>为每个 {@code code} 启动一个消费线程，XREADGROUP 读 {@code ths:l2:tick:{code}}（逐笔）与
- *       {@code ths:l2:quote:{code}}（盘口，爬虫额外 XADD 的 Stream，详见 Quote.java 注释）；</li>
- *   <li>订阅 {@code ths:l2:pool:change}（Pub/Sub）动态增删 code 的消费线程；</li>
- *   <li>逐笔双写 CK {@code rt_tick_archive}（零丢失，异步批量）。</li>
+ *   <li>{@code ths:l2:pool}（SET）：订阅股票池，SMEMBERS 发现 + {@code ths:l2:pool:change} Pub/Sub 动态增删；</li>
+ *   <li>{@code ths:l2:tick:{code}}（Stream，JiTu）：逐笔成交，仅含 t(当日相对毫秒)/d(B/S)；<b>不含价格与量</b>；
+ *       用 XREADGROUP 消费，ACK 保证不丢；</li>
+ *   <li>{@code ths:l2:quote:{code}}（<b>Hash，不是 Stream</b>）：盘口快照 tb10_prices/tb10_volumes 等；
+ *       用 HGETALL 周期拉取（Hash 无 Stream 语义，无法 XREADGROUP）。</li>
  * </ol>
- * 解耦：爬虫只生产到各自 Stream，本类只消费，崩溃重启从 lastConsumed 重放。
+ *
+ * <p><b>价格回贴（关键容错）</b>：JiTu tick 价格恒为 0，消费层在 tick 入窗口前，用该 code 最新 quote 快照的
+ * {@code lastPrice} 回贴到 {@code tick.price}（快照缺失则留 0，特征层对"价缺失"降级）。tick 的 volume/amount
+ * JiTu 当前也为 0，待爬虫补量后自动生效（无需改代码）。
+ *
+ * <p><b>解耦</b>：爬虫只生产到各自 Key，本类只消费；tick 双写 CK {@code rt_tick_archive}（异步批量，崩溃可重放）。
  */
 @Slf4j
 @Component
@@ -49,8 +52,7 @@ public class RedisStreamConsumer {
     /** 同花顺契约 key 前缀与频道名（集中管理，便于切换环境）。 */
     private static final String POOL_KEY = "ths:l2:pool";
     private static final String TICK_STREAM = "ths:l2:tick:";      // + code
-    private static final String QUOTE_STREAM = "ths:l2:quote:";     // + code
-    private static final String SECTOR_STREAM = "ths:l2:sector";    // 可选全局板块流
+    private static final String QUOTE_HASH = "ths:l2:quote:";       // + code （Hash，非 Stream）
     private static final String POOL_CHANGE_CHANNEL = "ths:l2:pool:change";
 
     private final StringRedisTemplate redis;
@@ -62,13 +64,16 @@ public class RedisStreamConsumer {
     private final String consumerName;
     private final long blockMs;
     private final int batch;
+    private final long quoteRefreshMs;
 
     private final ConcurrentLinkedQueue<Tick> pendingArchive = new ConcurrentLinkedQueue<>();
     private static final int ARCHIVE_MAX = 200_000;
 
-    /** code → 消费线程（每股票一个）。 */
+    /** code → 消费线程（每股票一个，仅消费 tick Stream）。 */
     private final Map<String, Thread> workers = new ConcurrentHashMap<>();
     private final Set<String> activeCodes = ConcurrentHashMap.newKeySet();
+    /** code → 最新 quote 快照（由 quote 拉取定时任务更新；tick 回贴价格用）。 */
+    private final Map<String, Quote> quoteCache = new ConcurrentHashMap<>();
     private volatile boolean running = true;
 
     public RedisStreamConsumer(StringRedisTemplate redis,
@@ -77,7 +82,8 @@ public class RedisStreamConsumer {
                                @Value("${replay.stream.group:replay-consumer}") String group,
                                @Value("${replay.stream.consumer:node-1}") String consumerName,
                                @Value("${replay.stream.block-ms:500}") long blockMs,
-                               @Value("${replay.stream.batch:100}") int batch) {
+                               @Value("${replay.stream.batch:100}") int batch,
+                               @Value("${replay.stream.quote-refresh-ms:1000}") long quoteRefreshMs) {
         this.redis = redis;
         this.window = window;
         this.tickArchiver = tickArchiver;
@@ -85,14 +91,17 @@ public class RedisStreamConsumer {
         this.consumerName = consumerName;
         this.blockMs = blockMs;
         this.batch = batch;
+        this.quoteRefreshMs = quoteRefreshMs;
     }
 
     @PostConstruct
     public void start() {
-        // 订阅股票池变更（动态增删）
         subscribePoolChange();
-        // 初始从 pool 拉全量 code 并启动消费线程
         refreshPool();
+        // 启动期先拉一轮 quote（避免 tick 早于 quote 到达时价格全缺失）
+        for (String code : activeCodes) {
+            pullQuote(code);
+        }
         log.info("[realtime] RedisStreamConsumer 启动，消费组={}/消费者={}，初始池={} 支",
                 group, consumerName, activeCodes.size());
     }
@@ -103,6 +112,7 @@ public class RedisStreamConsumer {
         workers.values().forEach(Thread::interrupt);
         workers.clear();
         activeCodes.clear();
+        quoteCache.clear();
         log.info("[realtime] RedisStreamConsumer 停止");
     }
 
@@ -118,18 +128,15 @@ public class RedisStreamConsumer {
         if (pool == null) {
             return;
         }
-        // 新增
         for (String code : pool) {
             if (code == null || code.isBlank()) {
                 continue;
             }
             if (activeCodes.add(code)) {
                 ensureGroup(TICK_STREAM + code);
-                ensureGroup(QUOTE_STREAM + code);
                 startWorker(code);
             }
         }
-        // 移除（爬虫从 pool 删掉的）
         for (String code : new ArrayList<>(activeCodes)) {
             if (!pool.contains(code)) {
                 removeWorker(code);
@@ -156,8 +163,8 @@ public class RedisStreamConsumer {
                     if ("add".equalsIgnoreCase(action)) {
                         if (activeCodes.add(code)) {
                             ensureGroup(TICK_STREAM + code);
-                            ensureGroup(QUOTE_STREAM + code);
                             startWorker(code);
+                            pullQuote(code);
                             log.info("[realtime] pool 新增 {}，已启动消费线程", code);
                         }
                     } else if ("remove".equalsIgnoreCase(action)) {
@@ -184,7 +191,7 @@ public class RedisStreamConsumer {
         }
     }
 
-    /** 为单个 code 启动消费线程：同时读 tick 流与 quote 流（两个 StreamOffset）。 */
+    /** 为单个 code 启动消费线程：仅消费 tick Stream（quote 由定时任务拉 Hash）。 */
     private void startWorker(String code) {
         Thread t = new Thread(() -> loop(code), "redis-stream-consumer-" + code);
         t.setDaemon(true);
@@ -198,14 +205,13 @@ public class RedisStreamConsumer {
             t.interrupt();
         }
         activeCodes.remove(code);
+        quoteCache.remove(code);
     }
 
     private void loop(String code) {
         String tickStream = TICK_STREAM + code;
-        String quoteStream = QUOTE_STREAM + code;
         List<StreamOffset<String>> offsets = List.of(
-                StreamOffset.create(tickStream, ReadOffset.lastConsumed()),
-                StreamOffset.create(quoteStream, ReadOffset.lastConsumed()));
+                StreamOffset.create(tickStream, ReadOffset.lastConsumed()));
         while (running && activeCodes.contains(code)) {
             try {
                 List<MapRecord<String, String, String>> records = redis.opsForStream().read(
@@ -215,7 +221,7 @@ public class RedisStreamConsumer {
                         offsets.toArray(new StreamOffset[0]));
                 if (records != null) {
                     for (MapRecord<String, String, String> r : records) {
-                        handle(r);
+                        handleTick(r, code);
                         try {
                             redis.opsForStream().acknowledge(group, r.getStream(), r.getId().getValue());
                         } catch (Exception ackEx) {
@@ -237,37 +243,86 @@ public class RedisStreamConsumer {
         }
     }
 
-    private void handle(MapRecord<String, String, String> r) {
-        String key = r.getStream();
+    /** 处理单条 tick：解析 JiTu → 回贴 quote 最新价 → 入窗口 + 归档队列。 */
+    private void handleTick(MapRecord<String, String, String> r, String code) {
         String payload = r.getValue().get("payload");
         if (payload == null) {
             return;
         }
         try {
-            if (key.startsWith(TICK_STREAM)) {
-                String code = key.substring(TICK_STREAM.length());
-                Tick t = mapper.readValue(payload, Tick.class);
-                if (t.getTsCode() == null || t.getTsCode().isBlank()) {
-                    t.setTsCode(code); // 用 stream key 补全
-                }
-                window.addTick(t);
-                if (pendingArchive.size() < ARCHIVE_MAX) {
-                    pendingArchive.add(t);
-                }
-            } else if (key.startsWith(QUOTE_STREAM)) {
-                String code = key.substring(QUOTE_STREAM.length());
-                Quote q = mapper.readValue(payload, Quote.class);
-                if (q.getTsCode() == null || q.getTsCode().isBlank()) {
-                    q.setTsCode(code);
-                }
-                window.putQuote(q);
-            } else if (SECTOR_STREAM.equals(key)) {
-                mapper.readValue(payload, Sector.class); // 暂仅留存，不进窗口
-            } else {
-                log.debug("[realtime] 未知 stream: {}", key);
+            Tick t = mapper.readValue(payload, Tick.class);
+            if (t.getTsCode() == null || t.getTsCode().isBlank()) {
+                t.setTsCode(code); // 用 stream key 补全
+            }
+            // 价格回贴：JiTu 无价，用最新 quote 快照 lastPrice 兜底
+            Quote q = quoteCache.get(code);
+            if (t.isPriceMissing() && q != null && q.getLastPrice() > 0) {
+                t.setPrice(q.getLastPrice());
+                // 量缺失时金额暂不推算（volume 也缺），仅价格回贴
+            }
+            window.addTick(t);
+            if (pendingArchive.size() < ARCHIVE_MAX) {
+                pendingArchive.add(t);
             }
         } catch (Exception e) {
-            log.warn("[realtime] 解析 payload 失败 stream={}: {}", key, e.getMessage());
+            log.warn("[realtime] 解析 tick payload 失败 stream={}: {}", r.getStream(), e.getMessage());
+        }
+    }
+
+    /** 周期拉取某 code 的 quote Hash，parseTb10 后存入 quoteCache。 */
+    private void pullQuote(String code) {
+        try {
+            Map<Object, Object> hash = redis.opsForHash().entries(QUOTE_HASH + code);
+            if (hash == null || hash.isEmpty()) {
+                return;
+            }
+            // 把 Hash 转成 JSON 串再复用 Quote 的 @JsonProperty 映射（键名一致：code/tb10_prices/timestamp...）
+            StringBuilder sb = new StringBuilder("{");
+            boolean first = true;
+            for (Map.Entry<Object, Object> e : hash.entrySet()) {
+                if (!first) {
+                    sb.append(",");
+                }
+                first = false;
+                sb.append("\"").append(e.getKey()).append("\":")
+                  .append(quoteValueJson(e.getValue()));
+            }
+            sb.append("}");
+            Quote q = mapper.readValue(sb.toString(), Quote.class);
+            q.parseTb10();
+            if (q.getTsCode() == null || q.getTsCode().isBlank()) {
+                q.setTsCode(code);
+            }
+            quoteCache.put(code, q);
+            window.putQuote(q);
+        } catch (Exception e) {
+            log.debug("[realtime] 拉取 quote 失败 code={}: {}", code, e.getMessage());
+        }
+    }
+
+    /** Hash value → JSON 字面量：数字原样，其它加引号。 */
+    private String quoteValueJson(Object v) {
+        if (v == null) {
+            return "null";
+        }
+        String s = v.toString();
+        if (s.matches("-?\\d+(\\.\\d+)?")) {
+            return s;
+        }
+        return "\"" + s.replace("\"", "\\\"") + "\"";
+    }
+
+    /**
+     * 每 quoteRefreshMs 拉一次全部 activeCode 的 quote Hash（Hash 无流语义，只能轮询）。
+     * 同时把快照推给窗口（FeatureCalculator 读 window.getQuote 取盘口特征）。
+     */
+    @Scheduled(fixedDelayString = "${replay.stream.quote-refresh-ms:1000}")
+    public void scheduledPullQuotes() {
+        if (!running) {
+            return;
+        }
+        for (String code : activeCodes) {
+            pullQuote(code);
         }
     }
 

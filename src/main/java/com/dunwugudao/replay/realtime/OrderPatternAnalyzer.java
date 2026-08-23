@@ -49,22 +49,38 @@ public final class OrderPatternAnalyzer {
             return new Result(0, 0, 0, "NORMAL");
         }
 
-        // ---- 1. 拆单吸筹 ----
-        long stealthCut = now - cfg.stealthWindowSec() * 1000L;
-        double stealthBuyVol = 0;
-        double stealthNet = 0;
+        // ---- 量缺失探测（JiTu 现状：逐笔 volume 恒为 0）----
+        // 量维度全缺时：拆单/对敲无法计算 → 退化 NORMAL；扫单退化为纯价格上行因子（不用量）。
+        // 爬虫补量后 hasVolume=true，全部分支自动恢复。
+        boolean hasVolume = false;
         for (Tick t : win) {
-            if (t.getTs() < stealthCut) {
-                continue;
-            }
-            if (t.directionSign() == 1 && t.getAmount() < cfg.bigOrderThreshold()) {
-                stealthBuyVol += t.getVolume();
-                stealthNet += t.getAmount();
+            if (t.getVolume() > 0) {
+                hasVolume = true;
+                break;
             }
         }
-        boolean stealthHit = stealthBuyVol >= cfg.stealthMinVolume();
-        if (!stealthHit) {
-            stealthNet = 0;
+
+        // ---- 1. 拆单吸筹（依赖量，量缺失直接跳过）----
+        double stealthNet = 0;
+        boolean stealthHit = false;
+        if (!hasVolume) {
+            // 量缺失：无法识别拆单，保持 stealthNet=0、stealthHit=false（后续形态判定不会命中 STEALTH）
+        } else {
+            long stealthCut = now - cfg.stealthWindowSec() * 1000L;
+            double stealthBuyVol = 0;
+            for (Tick t : win) {
+                if (t.getTs() < stealthCut) {
+                    continue;
+                }
+                if (t.directionSign() == 1 && t.getAmount() < cfg.bigOrderThreshold()) {
+                    stealthBuyVol += t.getVolume();
+                    stealthNet += t.getAmount();
+                }
+            }
+            stealthHit = stealthBuyVol >= cfg.stealthMinVolume();
+            if (!stealthHit) {
+                stealthNet = 0;
+            }
         }
 
         // ---- 2. 扫单密度 ----
@@ -95,8 +111,10 @@ public final class OrderPatternAnalyzer {
         if (sweepTotal > 0) {
             double buyRatio = (double) sweepBuyCnt / sweepTotal;
             double avgVol = sweepVol / sweepTotal;
-            // 量强度：窗口每笔均量相对"大单阈值手数"占比（价取 ~1850 近似），封顶 1
-            double volStrength = Math.min(1.0, avgVol / (cfg.bigOrderThreshold() / 100.0 / 1850.0));
+            // 量强度：窗口每笔均量相对"大单阈值手数"占比（价取 ~1850 近似），封顶 1。
+            // 量缺失（JiTu）时 avgVol=0 → volStrength=0，仅价格因子驱动（退化，不误判）。
+            double volStrength = hasVolume
+                    ? Math.min(1.0, avgVol / (cfg.bigOrderThreshold() / 100.0 / 1850.0)) : 0.0;
             // 价格上行因子：扫单吃卖档会推高成交价；拆单价格平稳→因子趋 0
             double priceUp = sweepFirstPrice > 0
                     ? Math.max(0, (sweepLastPrice - sweepFirstPrice) / sweepFirstPrice) : 0;
@@ -112,6 +130,10 @@ public final class OrderPatternAnalyzer {
         }
 
         // ---- 3. 对敲占比 ----
+        // 量缺失（JiTu）时量相近度不可计算 → 直接 0（退化 NORMAL），不进入配对逻辑避免假信号。
+        if (!hasVolume) {
+            return new Result(stealthNet, sweepDensity, 0, labelPattern(0, sweepDensity, false));
+        }
         List<Tick> sorted = new ArrayList<>(win);
         sorted.sort(Comparator.comparingLong(Tick::getTs));
         int paired = 0;
@@ -145,24 +167,26 @@ public final class OrderPatternAnalyzer {
         }
         double selfTradeRatio = sorted.size() > 0 ? (double) paired / sorted.size() : 0;
 
-        // ---- 形态标签 ----
+        String pattern = labelPattern(selfTradeRatio, sweepDensity, stealthHit);
+        return new Result(stealthNet, sweepDensity, selfTradeRatio, pattern);
+    }
+
+    /** 形态标签：对敲 > 0.3 / 扫单密度 > 0.6 / 拆单命中 三选一，多命中则 MIXED。 */
+    private static String labelPattern(double selfTradeRatio, double sweepDensity, boolean stealthHit) {
         boolean isSelf = selfTradeRatio > 0.3;
         boolean isSweep = sweepDensity > 0.6;
         boolean isStealth = stealthHit;
         int hitCount = (isSelf ? 1 : 0) + (isSweep ? 1 : 0) + (isStealth ? 1 : 0);
-        String pattern;
         if (hitCount == 0) {
-            pattern = "NORMAL";
+            return "NORMAL";
         } else if (hitCount > 1) {
-            pattern = "MIXED";
+            return "MIXED";
         } else if (isSelf) {
-            pattern = "SELF_TRADE";
+            return "SELF_TRADE";
         } else if (isSweep) {
-            pattern = "SWEEP";
+            return "SWEEP";
         } else {
-            pattern = "STEALTH";
+            return "STEALTH";
         }
-
-        return new Result(stealthNet, sweepDensity, selfTradeRatio, pattern);
     }
 }
