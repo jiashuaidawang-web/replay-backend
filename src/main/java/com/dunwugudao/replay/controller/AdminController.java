@@ -1,6 +1,7 @@
 package com.dunwugudao.replay.controller;
 
 import com.dunwugudao.replay.job.ReplayCalcJob;
+import com.dunwugudao.replay.plan.WatchPoolService;
 import com.dunwugudao.replay.realtime.StreamTrimmer;
 import com.dunwugudao.replay.service.ConceptDeriveService;
 import com.dunwugudao.replay.sim.AfterCloseSettlement;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * 运维 · 复盘重算触发。部署后补爬数据或修正算法时，手动对指定日期（或最新交易日）重跑全套计算。
@@ -27,6 +29,7 @@ public class AdminController {
     private final ConceptDeriveService conceptDeriveService;
     private final AfterCloseSettlement afterCloseSettlement;
     private final StreamTrimmer streamTrimmer;
+    private final WatchPoolService watchPoolService;
 
     /** 重算指定交易日（默认最新交易日）。各 skill 写入已内置「写后校验 + 静默丢自愈」
      *  （verifyAndRepair：逐表核查服务端行数，缺失则换新建连接重跑该 skill，循环到补齐），
@@ -90,5 +93,15 @@ public class AdminController {
     public String xtrim() {
         streamTrimmer.trimNow();
         return "xtrim done";
+    }
+
+    /** 生成次日可溯源观察池：从 S4/S5/S7 三表捞最近交易日命中股 → 写 CK watch_pool
+     *  （带 source_skill 标签 + reason）→ 清空并重置 Redis ths:l2:pool 为真实观察标的。
+     *  date 不传 → 自动回退 leader_pool_daily 最新交易日。明天开盘前调用一次即可。 */
+    @PostMapping("/sync-watch-pool")
+    public String syncWatchPool(@RequestParam(required = false)
+                                @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        List<String> codes = watchPoolService.buildAndSync(date);
+        return "sync-watch-pool done: " + codes.size() + " codes -> " + codes;
     }
 }

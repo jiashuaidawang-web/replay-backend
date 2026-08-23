@@ -90,11 +90,15 @@ public class CkRetryInterceptor implements Interceptor {
         throw last;
     }
 
-    /** cause 链中是否存在"命中瞬态关键词的 SQLException"。 */
+    /** cause 链中是否存在"命中瞬态关键词的 SQLException / ClickHouseException"。
+     *  注意：ClickHouse 驱动把网络错误包成 {@code ClickHouseException}（继承 Exception，
+     *  不是 SQLException），若只认 SQLException 会漏掉最常见的 Connection reset 类故障，
+     *  导致本拦截器完全不重试。故对两类异常均做关键词判定，业务 SQL 语法错误不会命中关键词，
+     *  仍会上抛。*/
     private boolean isTransientSql(Throwable t) {
         Throwable cur = t;
         while (cur != null) {
-            if (cur instanceof java.sql.SQLException) {
+            if (cur instanceof java.sql.SQLException || cur instanceof com.clickhouse.client.ClickHouseException) {
                 String m = cur.getMessage();
                 if (m != null) {
                     String lm = m.toLowerCase(java.util.Locale.ROOT);

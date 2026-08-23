@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dunwugudao.replay.mapper.ck.WatchPoolMapper">
+
+    <select id="selectBoardMembers" resultType="java.lang.String">
+        SELECT DISTINCT ts_code
+        FROM stock_board_rel FINAL
+        WHERE board_code = #{boardCode}
+    </select>
+
+</mapper>

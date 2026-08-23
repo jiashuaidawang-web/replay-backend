@@ -31,6 +31,36 @@ ENGINE = ReplacingMergeTree(_ver)
 ORDER BY (plan_date, ts_code);
 
 -- ---------------------------------------------------------------
+-- 1.5) watch_pool 次日可溯源观察池（全链路事件线 · 选股段）
+-- ---------------------------------------------------------------
+-- 承载「T 日复盘战法选股 → 同步 Redis pool → T+1 盘中资金观察 → 买卖 → 归因」整条流水线。
+-- 每只股票带 source_skill 标签（S4/S5/S7…），reason 记录「因何战法、何种条件入选」，全链路可回溯。
+-- T+1 盘后把 buy_*/sell_*/pnl_*/outcome 回填进同一行，形成事件线。
+CREATE TABLE IF NOT EXISTS watch_pool
+(
+    _ver                DateTime MATERIALIZED now(),
+    sel_date            Date,                               -- T 日：选股（复盘）日期
+    ts_code             String,                             -- 个股代码（带后缀）
+    stock_name          String,
+    source_skill        String,                             -- 入选战法标签：S4(龙头)/S5(龙头买卖)/S7(题材)…多战法命中用逗号拼接
+    reason              String,                             -- 入选理由（结构化：如"5连板妖股+主线AI算力+分歧日低吸"）
+    board_code          String,                             -- 所属主线板块（妖/独狼=__DW__）
+    role                String,                             -- 龙一~龙五/妖/独狼
+    selected_action     String,                             -- 战法建议动作（buy/buy_dip/hold/reduce/watch…）
+    synced_redis        UInt8 DEFAULT 0,                    -- 是否已 SADD 进 ths:l2:pool（0/1）
+    -- ---- T+1 事件线预留列（盘后回填，初始 NULL）----
+    buy_signal          Nullable(String),                   -- 实际触发买入信号（T+1 盘中）
+    buy_reason          Nullable(String),                   -- 因何买入（资金确认/战法触发…）
+    buy_price           Nullable(Float64),                  -- 买入价
+    sell_reason         Nullable(String),                   -- 因何卖出（止损/落袋/破位…）
+    sell_price          Nullable(Float64),                  -- 卖出价
+    pnl_pct             Nullable(Float64),                  -- 持仓盈亏 %（卖出后算）
+    outcome             Nullable(String)                    -- 落袋为安 / 止损出局 / 持有未动
+)
+ENGINE = ReplacingMergeTree(_ver)
+ORDER BY (sel_date, ts_code);
+
+-- ---------------------------------------------------------------
 -- 2) strategy_catalog 战法目录（CK RMT，低频维护）
 -- ---------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS strategy_catalog
