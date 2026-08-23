@@ -9,14 +9,18 @@
         WHERE board_code = #{boardCode}
     </select>
 
-    <select id="selectStockNames" resultType="java.util.HashMap">
-        SELECT splitByChar('.', ts_code)[1] AS ts_code, argMax(stock_name, trade_date) AS stock_name
-        FROM stock_daily FINAL
-        WHERE splitByChar('.', ts_code)[1] IN
+    <!-- 子查询 + 非冲突别名 bare：CK 23.8 下 SELECT 别名与源列同名会触发别名遮蔽（NOT_AN_AGGREGATE） -->
+    <select id="selectStockNames" resultType="com.dunwugudao.replay.mapper.ck.StockNameRow">
+        SELECT bare AS ts_code, argMax(stock_name, trade_date) AS stock_name
+        FROM (
+            SELECT splitByChar('.', ts_code)[1] AS bare, stock_name, trade_date
+            FROM stock_daily FINAL
+        )
+        WHERE bare IN
         <foreach collection="codes" item="c" open="(" separator="," close=")">
             #{c}
         </foreach>
-        GROUP BY splitByChar('.', ts_code)[1]
+        GROUP BY bare
     </select>
 
     <select id="selectBySelDate" resultType="com.dunwugudao.replay.mapper.ck.WatchPoolRow">

@@ -21,10 +21,11 @@ public interface WatchPoolMapper {
     List<String> selectBoardMembers(@Param("boardCode") String boardCode);
 
     /**
-     * 批量补全股票名（key=去后缀 ts_code，value=stock_name）。
+     * 批量补全股票名（多行 List 返回，服务层聚合成 Map）。
      * stock_daily 的 ts_code 带后缀，统一用 splitByChar 去后缀匹配（CK 23.8 无 split_part 函数），故入参也应是去后缀代码。
+     * 注意：SELECT 别名不可与源列同名（CK 23.8 别名遮蔽会导致 NOT_AN_AGGREGATE），故走子查询。
      */
-    Map<String, String> selectStockNames(@Param("codes") List<String> codes);
+    List<StockNameRow> selectStockNames(@Param("codes") List<String> codes);
 
     /** 指定选股日（sel_date）的全部 watch_pool 行（FINAL，幂等折叠）。 */
     List<WatchPoolRow> selectBySelDate(@Param("selDate") LocalDate selDate);

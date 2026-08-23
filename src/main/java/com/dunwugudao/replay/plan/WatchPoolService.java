@@ -193,7 +193,12 @@ public class WatchPoolService {
             for (WatchItem it : merged.values()) {
                 bareCodes.add(stripSuffix(it.tsCode));
             }
-            Map<String, String> names = watchMapper.selectStockNames(bareCodes);
+            Map<String, String> names = new java.util.HashMap<>();
+            for (com.dunwugudao.replay.mapper.ck.StockNameRow r : watchMapper.selectStockNames(bareCodes)) {
+                if (r.getTsCode() != null && r.getStockName() != null) {
+                    names.put(r.getTsCode(), r.getStockName());
+                }
+            }
             for (WatchItem it : merged.values()) {
                 String nm = names.get(stripSuffix(it.tsCode));
                 if (nm != null && !nm.isBlank()) {
