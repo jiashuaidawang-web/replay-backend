@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dunwugudao.replay.mapper.ck.DecisionLogCkMapper">
+
+    <resultMap id="RowMap" type="com.dunwugudao.replay.mapper.ck.DecisionLogRow">
+        <result column="decision_id" property="decisionId"/>
+        <result column="ts" property="ts"/>
+        <result column="ts_code" property="tsCode"/>
+        <result column="action" property="action"/>
+        <result column="score" property="score"/>
+        <result column="risk_level" property="riskLevel"/>
+        <result column="reference_price" property="referencePrice"/>
+        <result column="reason" property="reason"/>
+        <result column="strategy_id" property="strategyId"/>
+        <result column="stage" property="stage"/>
+        <result column="capital_signal" property="capitalSignal"/>
+        <result column="executed" property="executed"/>
+        <result column="order_id" property="orderId"/>
+    </resultMap>
+
+    <select id="selectByTsCode" resultMap="RowMap">
+        SELECT decision_id, ts, ts_code, action, score, risk_level,
+               reference_price, reason, strategy_id, stage, capital_signal,
+               executed, order_id
+        FROM decision_log FINAL
+        WHERE ts_code = #{tsCode}
+        ORDER BY ts ASC
+    </select>
+
+    <select id="selectExecutedByTsCode" resultMap="RowMap">
+        SELECT decision_id, ts, ts_code, action, score, risk_level,
+               reference_price, reason, strategy_id, stage, capital_signal,
+               executed, order_id
+        FROM decision_log FINAL
+        WHERE ts_code = #{tsCode} AND executed = 1
+        ORDER BY ts ASC
+    </select>
+
+</mapper>

@@ -19,4 +19,13 @@
         GROUP BY split_part(ts_code, '.', 1)
     </select>
 
+    <select id="selectBySelDate" resultType="com.dunwugudao.replay.mapper.ck.WatchPoolRow">
+        SELECT sel_date, ts_code, stock_name, source_skill, reason, board_code, role,
+               selected_action, synced_redis,
+               buy_signal, buy_reason, buy_price, sell_reason, sell_price, pnl_pct, outcome
+        FROM watch_pool FINAL
+        WHERE sel_date = #{selDate}
+        ORDER BY ts_code ASC
+    </select>
+
 </mapper>
