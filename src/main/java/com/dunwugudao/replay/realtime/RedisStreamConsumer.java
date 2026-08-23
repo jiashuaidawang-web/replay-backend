@@ -73,6 +73,12 @@ public class RedisStreamConsumer {
     private final ConcurrentLinkedQueue<Tick> pendingArchive = new ConcurrentLinkedQueue<>();
     private static final int ARCHIVE_MAX = 200_000;
 
+    /** Redis 连通状态（待命态管理）：false→true 只在首次失败时打一条 WARN，恢复时打一条 INFO。 */
+    private final java.util.concurrent.atomic.AtomicBoolean redisDown = new java.util.concurrent.atomic.AtomicBoolean(false);
+    /** refreshPool 失败日志限频（毫秒时间戳）：避免 Redis 挂掉时每 30s 刷一条。 */
+    private final java.util.concurrent.atomic.AtomicLong lastPoolWarnMs = new java.util.concurrent.atomic.AtomicLong(0);
+    private static final long POOL_WARN_INTERVAL_MS = 300_000L; // 5 分钟最多一条
+
     /** code → 消费线程（每股票一个，仅消费 tick Stream）。 */
     private final Map<String, Thread> workers = new ConcurrentHashMap<>();
     private final Set<String> activeCodes = ConcurrentHashMap.newKeySet();
@@ -126,7 +132,13 @@ public class RedisStreamConsumer {
         try {
             pool = redis.opsForSet().members(POOL_KEY);
         } catch (Exception e) {
-            log.warn("[realtime] 读取 {} 失败（将重试）: {}", POOL_KEY, e.getMessage());
+            // 限频：Redis 挂掉期间每 5 分钟最多一条 WARN，避免与消费线程日志叠加刷屏
+            long now = System.currentTimeMillis();
+            long last = lastPoolWarnMs.get();
+            if (now - last >= POOL_WARN_INTERVAL_MS && lastPoolWarnMs.compareAndSet(last, now)) {
+                log.warn("[realtime] 读取 {} 失败（盘中模块待命，{}分钟内不再重复提示）: {}",
+                        POOL_KEY, POOL_WARN_INTERVAL_MS / 60000, e.getMessage());
+            }
             return;
         }
         if (pool == null) {
@@ -235,14 +247,25 @@ public class RedisStreamConsumer {
                         }
                     }
                 }
-                // 成功读到（含空）即视为连通，归零退避。
+                // 成功读到（含空）即视为连通，归零退避；若此前处于待命态则补一条恢复 INFO。
                 consecutiveFails = 0;
+                if (redisDown.compareAndSet(true, false)) {
+                    log.info("[realtime] Redis 已恢复连通，盘中实时模块退出待命态");
+                }
             } catch (Exception e) {
                 if (running) {
                     consecutiveFails++;
-                    // 首次失败打 WARN 提示；后续退避并降为 debug，避免几百个线程每秒刷满日志。
+                    // 首次失败：单机只打一条「进入待命态」WARN（多线程抢 CAS，败者静默）；
+                    // 后续退避并降为 debug，避免几百个线程每秒刷满日志。
                     if (consecutiveFails == 1) {
-                        log.warn("[realtime] Redis Stream 读取异常 code={}（将退避重试）: {}", code, e.getMessage());
+                        if (redisDown.compareAndSet(false, true)) {
+                            log.warn("[realtime] Redis 不可达（{}），盘中实时模块进入待命态——"
+                                    + "不影响 S1~S8 复盘计算与接口；恢复后自动继续。首个异常 code={}",
+                                    e.getMessage(), code);
+                        } else {
+                            log.debug("[realtime] Redis Stream 读取异常 code={}（待命态，退避重试）: {}",
+                                    code, e.getMessage());
+                        }
                     } else {
                         log.debug("[realtime] Redis Stream 读取异常 code={} 第{}次（退避中）: {}",
                                 code, consecutiveFails, e.getMessage());
