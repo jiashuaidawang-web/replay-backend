@@ -18,6 +18,7 @@ import com.dunwugudao.replay.service.MainlineResult;
 import com.dunwugudao.replay.service.SentimentCalculator;
 import com.dunwugudao.replay.service.ThemeFactorCalculator;
 import com.dunwugudao.replay.service.TrendCalculator;
+import com.dunwugudao.replay.sim.AfterCloseSettlement;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -53,6 +54,7 @@ public class ReplayCalcJob {
     private final MainForceCalculator mainForceCalculator;
     private final LeaderTradeCalculator leaderTradeCalculator;
     private final CkHttpWriter ckHttpWriter;
+    private final AfterCloseSettlement afterCloseSettlement;
     /** ch 数据源（ClickHouse）。注入用于瞬态故障后强制清空连接池，避免死连接级联污染后续读取步骤。 */
     @Qualifier("ckDataSource")
     private final javax.sql.DataSource ckDataSource;
@@ -108,6 +110,9 @@ public class ReplayCalcJob {
 
         // 写后校验 + 缺失重跑（HTTP 直写 + HTTP count，服务端为准，杜绝静默丢漏判）
         verifyAndRepair(tradeDate);
+
+        // M2 盘后结算：d1/d5 回填 + exp_log 生成（对接模拟盘数据底座）
+        safeStep("M2 盘后结算", () -> afterCloseSettlement.settle(tradeDate));
 
         log.info("====== 复盘计算结束: {} ======", tradeDate);
     }

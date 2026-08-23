@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN"
+        "https://mybatis.org/dtd/mybatis-3-mapper.dtd">
+<mapper namespace="com.dunwugudao.replay.mapper.ck.SimTradeCkMapper">
+
+    <resultMap id="BaseResultMap" type="com.dunwugudao.replay.mapper.ck.SimTradeRow">
+        <result column="trade_id" property="tradeId"/>
+        <result column="order_id" property="orderId"/>
+        <result column="plan_id" property="planId"/>
+        <result column="ts_code" property="tsCode"/>
+        <result column="stock_name" property="stockName"/>
+        <result column="board_code" property="boardCode"/>
+        <result column="role" property="role"/>
+        <result column="side" property="side"/>
+        <result column="price" property="price"/>
+        <result column="qty" property="qty"/>
+        <result column="amount" property="amount"/>
+        <result column="trade_time" property="tradeTime"/>
+        <result column="strategy_id" property="strategyId"/>
+        <result column="stage_at_entry" property="stageAtEntry"/>
+        <result column="capital_confirm" property="capitalConfirm"/>
+        <result column="entry_reason" property="entryReason"/>
+        <result column="exit_reason" property="exitReason"/>
+        <result column="planned_action" property="plannedAction"/>
+        <result column="pnl" property="pnl"/>
+        <result column="d1_ret" property="d1Ret"/>
+        <result column="d5_ret" property="d5Ret"/>
+        <result column="is_trap" property="isTrap"/>
+    </resultMap>
+
+    <select id="selectByTradeDate" resultMap="BaseResultMap">
+        SELECT trade_id, order_id, plan_id, ts_code, stock_name, board_code, role,
+               side, price, qty, amount, trade_time, strategy_id, stage_at_entry,
+               capital_confirm, entry_reason, exit_reason, planned_action,
+               pnl, d1_ret, d5_ret, is_trap
+        FROM sim_trade FINAL
+        WHERE toDate(trade_time) = #{tradeDate}
+        ORDER BY ts_code ASC, trade_time ASC
+    </select>
+
+    <select id="selectByTsCode" resultMap="BaseResultMap">
+        SELECT trade_id, order_id, plan_id, ts_code, stock_name, board_code, role,
+               side, price, qty, amount, trade_time, strategy_id, stage_at_entry,
+               capital_confirm, entry_reason, exit_reason, planned_action,
+               pnl, d1_ret, d5_ret, is_trap
+        FROM sim_trade FINAL
+        WHERE ts_code = #{tsCode}
+        ORDER BY trade_time ASC
+    </select>
+
+    <select id="selectWithNullD1" resultMap="BaseResultMap">
+        SELECT trade_id, order_id, plan_id, ts_code, stock_name, board_code, role,
+               side, price, qty, amount, trade_time, strategy_id, stage_at_entry,
+               capital_confirm, entry_reason, exit_reason, planned_action,
+               pnl, d1_ret, d5_ret, is_trap
+        FROM sim_trade FINAL
+        WHERE d1_ret IS NULL
+        ORDER BY ts_code ASC, trade_time ASC
+    </select>
+
+    <select id="selectDistinctTsCodes" resultType="java.lang.String">
+        SELECT DISTINCT ts_code FROM sim_trade FINAL
+    </select>
+
+</mapper>

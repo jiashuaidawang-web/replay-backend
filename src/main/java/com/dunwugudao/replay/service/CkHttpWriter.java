@@ -156,6 +156,19 @@ public class CkHttpWriter {
         if (v instanceof Boolean) {
             return ((Boolean) v) ? "1" : "0";
         }
+        if (v instanceof List<?> list) {
+            // CK Array(String) 字面量：['a','b']（元素按字符串处理，转义单引号）
+            StringBuilder sb = new StringBuilder("[");
+            for (int i = 0; i < list.size(); i++) {
+                if (i > 0) {
+                    sb.append(",");
+                }
+                Object el = list.get(i);
+                String s = el == null ? "" : el.toString();
+                sb.append("'").append(s.replace("\\", "\\\\").replace("'", "''")).append("'");
+            }
+            return sb.append("]").toString();
+        }
         String s = v.toString();
         // 单引号/反斜杠转义，避免破坏 SQL
         return "'" + s.replace("\\", "\\\\").replace("'", "''") + "'";

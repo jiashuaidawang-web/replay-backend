@@ -4,6 +4,13 @@ server:
 spring:
   application:
     name: replay-backend
+  # Redis Streams 传输总线（盘中实时 L2，同花顺 L2 契约 v1.0）：爬虫 XADD 生产，后端 XREADGROUP 消费。
+  # 生产指向 Windows 侧的 Redis（与 CK/OG 同机 100.97.74.45）；开发期可改 localhost 起 redis-server。
+  data:
+    redis:
+      host: ${REPLAY_REDIS_HOST:100.97.74.45}
+      port: ${REPLAY_REDIS_PORT:6379}
+      timeout: 5000
   datasource:
     # ----------------------------------------------------------------------
     # 双数据源架构（与爬虫工程 crawler-backend-new 保持一致）：
@@ -88,3 +95,32 @@ replay:
   task:
     heartbeat-seconds: 60     # 超过该时间未更新 → 任务被认为失联，可被其它节点重新认领
     max-attempt: 3            # 单日单类型最大重试次数
+
+  # ---------------- 盘中实时模拟盘（M1）----------------
+  stream:
+    group: replay-consumer    # Redis Streams 消费组名
+    consumer: node-1          # 消费者名
+    block-ms: 500             # XREADGROUP 阻塞时长
+    batch: 100                # 每次最多取多少条
+    feature-interval-ms: 3000 # 特征计算周期（决策输入节拍）
+    tick-window-seconds: 900  # 内存滚动窗口保留时长（15 分钟），用于算大单净主动买入
+    pool-refresh-ms: 30000    # 兜底刷新 ths:l2:pool 股票池的周期（防 pub/sub 丢消息导致不一致）
+    xtrim-max-len: 10000      # 收盘 XTRIM 单股逐笔流保留条数（对齐同花顺契约 v1.0）
+    # ---------------- M3 拆单识别阈值 ----------------
+    stealth-window-sec: 30        # 拆单识别窗口（秒）：统计同向小单累计量
+    stealth-min-volume: 10000     # 拆单"破当量"阈值（手）：同向小单累计达万手→拆单吸筹
+    sweep-window-sec: 10          # 扫单窗口（秒）：统计主买密度与量强度
+    self-trade-window-ms: 200     # 对敲配对时间容差（ms）
+    self-trade-vol-tol: 0.2       # 对敲量相近容差（比例）
+    big-order-threshold: 500000   # 大单阈值（元）：单笔成交额 >= 该值视为大单（约 50 万）
+    # 衍生特征阈值
+    net-buy-strong: 2000000   # 近窗口大单净主动买入额 >= 该值 → 资金确认强（元）
+    vol-breakout-ratio: 3.0   # 当日成交额 / 过去 N 日均值 >= 该倍 → 放量突破
+  sim:
+    # M1 单票小闭环演示：默认关注标的（用户盘中真实回传的标的之一）
+    demo-ts-code: 600519      # 贵州茅台（示例；实际以 plan_pool 为准）
+    demo-stock-name: 贵州茅台
+    account-id: sim-001       # 模拟账户标识
+    init-cash: 1000000        # 模拟账户初始资金（元）
+    default-position-pct: 0.1 # 单笔默认仓位（计划未指定 planned_position_pct 时使用）
+    auto-execute: true        # 决策 BUY/SELL 是否自动执行模拟成交（false=只出建议）

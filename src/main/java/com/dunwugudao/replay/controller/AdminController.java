@@ -1,7 +1,9 @@
 package com.dunwugudao.replay.controller;
 
 import com.dunwugudao.replay.job.ReplayCalcJob;
+import com.dunwugudao.replay.realtime.StreamTrimmer;
 import com.dunwugudao.replay.service.ConceptDeriveService;
+import com.dunwugudao.replay.sim.AfterCloseSettlement;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -23,6 +25,8 @@ public class AdminController {
 
     private final ReplayCalcJob replayCalcJob;
     private final ConceptDeriveService conceptDeriveService;
+    private final AfterCloseSettlement afterCloseSettlement;
+    private final StreamTrimmer streamTrimmer;
 
     /** 重算指定交易日（默认最新交易日）。各 skill 写入已内置「写后校验 + 静默丢自愈」
      *  （verifyAndRepair：逐表核查服务端行数，缺失则换新建连接重跑该 skill，循环到补齐），
@@ -66,5 +70,25 @@ public class AdminController {
             }
         }
         return "recalc-mainline done (with retry): " + date;
+    }
+
+    /** M2 盘后结算：对指定交易日（默认最新）做 d1/d5 收益回填 + exp_log 经验生成。
+     *  也可不传 date（仅对 sim_trade 全量结算，与具体交易日无关）。 */
+    @PostMapping("/settle")
+    public String settle(@RequestParam(required = false)
+                         @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+        if (date != null) {
+            afterCloseSettlement.settle(date);
+            return "settle done: " + date;
+        }
+        afterCloseSettlement.settle(java.time.LocalDate.now());
+        return "settle done: all sim_trade";
+    }
+
+    /** 手动对逐笔流（ths:l2:tick:{code}，遍历 ths:l2:pool）执行 XTRIM 裁剪（收盘清理保险）。 */
+    @PostMapping("/xtrim")
+    public String xtrim() {
+        streamTrimmer.trimNow();
+        return "xtrim done";
     }
 }
