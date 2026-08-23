@@ -9,4 +9,14 @@
         WHERE board_code = #{boardCode}
     </select>
 
+    <select id="selectStockNames" resultType="java.util.HashMap">
+        SELECT split_part(ts_code, '.', 1) AS ts_code, argMax(stock_name, trade_date) AS stock_name
+        FROM stock_daily FINAL
+        WHERE split_part(ts_code, '.', 1) IN
+        <foreach collection="codes" item="c" open="(" separator="," close=")">
+            #{c}
+        </foreach>
+        GROUP BY split_part(ts_code, '.', 1)
+    </select>
+
 </mapper>

@@ -4,6 +4,8 @@ import com.dunwugudao.replay.entity.LeaderPoolDaily;
 import com.dunwugudao.replay.entity.LeaderTradeDaily;
 import com.dunwugudao.replay.entity.ThemeFactorDaily;
 import com.dunwugudao.replay.mapper.ck.CommonMapper;
+import com.dunwugudao.replay.plan.PlanItem;
+import com.dunwugudao.replay.plan.PlanPoolService;
 import com.dunwugudao.replay.mapper.ck.LeaderPoolDailyMapper;
 import com.dunwugudao.replay.mapper.ck.LeaderTradeDailyMapper;
 import com.dunwugudao.replay.mapper.ck.ThemeFactorDailyMapper;
@@ -52,6 +54,7 @@ public class WatchPoolService {
     private final CommonMapper commonMapper;
     private final CkHttpWriter ck;
     private final StringRedisTemplate redis;
+    private final PlanPoolService planPool;
 
     /** S7 题材入选阈值（total 分 0~100）。低于此分的题材不展开成个股。 */
     private final double s7MinTotal;
@@ -63,6 +66,7 @@ public class WatchPoolService {
                             CommonMapper commonMapper,
                             CkHttpWriter ck,
                             StringRedisTemplate redis,
+                            PlanPoolService planPool,
                             @Value("${replay.watch-pool.s7-min-total:60}") double s7MinTotal) {
         this.s4Mapper = s4Mapper;
         this.s5Mapper = s5Mapper;
@@ -71,6 +75,7 @@ public class WatchPoolService {
         this.commonMapper = commonMapper;
         this.ck = ck;
         this.redis = redis;
+        this.planPool = planPool;
         this.s7MinTotal = s7MinTotal;
     }
 
@@ -177,6 +182,23 @@ public class WatchPoolService {
             log.warn("[watch-pool] 选股日={} 三表均无命中，pool 将为空", date);
         }
 
+        // ---- 补全股票名（去后缀批量查 stock_daily FINAL，查不到留空）----
+        try {
+            List<String> bareCodes = new ArrayList<>(merged.size());
+            for (WatchItem it : merged.values()) {
+                bareCodes.add(stripSuffix(it.tsCode));
+            }
+            Map<String, String> names = watchMapper.selectStockNames(bareCodes);
+            for (WatchItem it : merged.values()) {
+                String nm = names.get(stripSuffix(it.tsCode));
+                if (nm != null && !nm.isBlank()) {
+                    it.stockName = nm;
+                }
+            }
+        } catch (Exception e) {
+            log.warn("[watch-pool] 批量补股票名失败（不影响主流程）：{}", e.getMessage());
+        }
+
         // ---- 写 CK watch_pool ----
         List<Object[]> rows = new ArrayList<>();
         for (WatchItem it : merged.values()) {
@@ -197,9 +219,42 @@ public class WatchPoolService {
         }
         log.info("[watch-pool] 选股日={} 共 {} 支入选，已写 CK watch_pool", date, merged.size());
 
+        // ---- 灌盘前狙击圈（PlanPoolService）----
+        // 用户决策：战法全开放（candidateStrategies=null）。这样 TraderEngine 会对 watch_pool 内
+        // 标的用全部 11 条战法评估并自动模拟交易，实现「复盘选股 → T+1 自动验证战法有效性」闭环。
+        List<PlanItem> plans = new ArrayList<>();
+        for (WatchItem it : merged.values()) {
+            plans.add(PlanItem.builder()
+                    .planDate(date)
+                    .tsCode(it.tsCode)
+                    .stockName(it.stockName)
+                    .direction(it.boardCode)
+                    .boardCode(it.boardCode)
+                    .role(it.role.isBlank() ? null : it.role)
+                    .candidateStrategies(null) // 全开放
+                    .plannedAction(it.selectedAction.isBlank() ? null : it.selectedAction)
+                    .plannedPositionPct(0.10)  // 单标默认 10% 仓位
+                    .note("watch_pool 溯源：" + String.join(" | ", it.reasons))
+                    .build());
+        }
+        if (!plans.isEmpty()) {
+            planPool.upsert(plans);
+            log.info("[watch-pool] 已灌狙击圈 {} 支（战法全开放），TraderEngine 将自动评估",
+                    plans.size());
+        }
+
         // ---- 同步 Redis ths:l2:pool ----
         syncRedis(merged.keySet());
         return new ArrayList<>(merged.keySet());
+    }
+
+    /** ts_code 去后缀（.SH/.SZ/.BJ），统一用于 stock_board_rel / stock_daily 关联。 */
+    private static String stripSuffix(String code) {
+        if (code == null) {
+            return "";
+        }
+        int dot = code.lastIndexOf('.');
+        return dot > 0 ? code.substring(0, dot) : code;
     }
 
     /** 清空旧 pool → SADD 真实 code → PUBLISH pool:change(add) 通知消费端。 */
