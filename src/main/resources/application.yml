@@ -121,6 +121,11 @@ replay:
     # 决策仍正常落库，capital_signal 标记为 L2_OFF，context_json 中 l2_used=false。
     l2:
       enabled: false
+    # L1 降级消费开关（默认开启）：L2 不可用时，读 l1:ticks + l1:quotes 全局流，
+    # 按 ths:l2:pool 过滤后写入 TickWindow，复用特征计算 + 交易引擎全链路。
+    # L1 tick 含 price+vol 但无方向字段，方向由 price vs 盘口 bid1/ask1 推断。
+    l1:
+      enabled: true
   # 次日可溯源观察池（watch_pool）：从 S4/S5/S7 捞股同步 Redis pool
   watch-pool:
     s7-min-total: 60          # S7 题材入选阈值（total 分 0~100），低于此分的题材不展开成个股
