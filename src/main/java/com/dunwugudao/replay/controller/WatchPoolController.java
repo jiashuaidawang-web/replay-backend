@@ -17,9 +17,11 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 次日可溯源观察池（watch_pool）查询 + 全链路事件线。
@@ -52,6 +54,20 @@ public class WatchPoolController {
             return ResponseEntity.noContent().build();
         }
         List<WatchPoolRow> rows = watchMapper.selectBySelDate(date);
+        if (rows.isEmpty()) {
+            return ResponseEntity.noContent().build();
+        }
+
+        // 批量查 sim_trade + decision_log（避免 N+1）
+        List<String> codes = rows.stream().map(WatchPoolRow::getTsCode).distinct().toList();
+        List<SimTradeRow> allTrades = simTradeMapper.selectByTsCodes(codes);
+        List<DecisionLogRow> allDecisions = decisionMapper.selectByTsCodes(codes);
+
+        // 按 ts_code 分组
+        Map<String, List<SimTradeRow>> tradeMap = allTrades.stream()
+                .collect(Collectors.groupingBy(SimTradeRow::getTsCode, LinkedHashMap::new, Collectors.toList()));
+        Map<String, List<DecisionLogRow>> decisionMap = allDecisions.stream()
+                .collect(Collectors.groupingBy(DecisionLogRow::getTsCode, LinkedHashMap::new, Collectors.toList()));
 
         List<Map<String, Object>> items = new ArrayList<>(rows.size());
         for (WatchPoolRow r : rows) {
@@ -64,7 +80,6 @@ public class WatchPoolController {
             it.put("role", r.getRole());
             it.put("selectedAction", r.getSelectedAction());
             it.put("syncedRedis", r.getSyncedRedis());
-            // T+1 归因回填（阶段二；未回填则为 null）
             it.put("buySignal", r.getBuySignal());
             it.put("buyReason", r.getBuyReason());
             it.put("buyPrice", r.getBuyPrice());
@@ -73,8 +88,8 @@ public class WatchPoolController {
             it.put("pnlPct", r.getPnlPct());
             it.put("outcome", r.getOutcome());
 
-            // 关联模拟成交（升序，便于配对买/卖）
-            List<SimTradeRow> trades = simTradeMapper.selectByTsCode(r.getTsCode());
+            // 关联模拟成交
+            List<SimTradeRow> trades = tradeMap.getOrDefault(r.getTsCode(), Collections.emptyList());
             List<Map<String, Object>> tradeList = new ArrayList<>(trades.size());
             for (SimTradeRow t : trades) {
                 Map<String, Object> m = new LinkedHashMap<>();
@@ -94,8 +109,8 @@ public class WatchPoolController {
             }
             it.put("trades", tradeList);
 
-            // 关联决策流（含未执行的 WATCH/HOLD）
-            List<DecisionLogRow> decisions = decisionMapper.selectByTsCode(r.getTsCode());
+            // 关联决策流
+            List<DecisionLogRow> decisions = decisionMap.getOrDefault(r.getTsCode(), Collections.emptyList());
             List<Map<String, Object>> decisionList = new ArrayList<>(decisions.size());
             for (DecisionLogRow d : decisions) {
                 Map<String, Object> m = new LinkedHashMap<>();

@@ -28,6 +28,18 @@
         ORDER BY ts ASC
     </select>
 
+    <select id="selectByTsCodes" resultMap="RowMap">
+        SELECT decision_id, ts, ts_code, action, score, risk_level,
+               reference_price, reason, strategy_id, stage, capital_signal,
+               executed, order_id
+        FROM decision_log FINAL
+        WHERE ts_code IN
+        <foreach collection="tsCodes" item="c" open="(" separator="," close=")">
+            #{c}
+        </foreach>
+        ORDER BY ts_code ASC, ts ASC
+    </select>
+
     <select id="selectExecutedByTsCode" resultMap="RowMap">
         SELECT decision_id, ts, ts_code, action, score, risk_level,
                reference_price, reason, strategy_id, stage, capital_signal,

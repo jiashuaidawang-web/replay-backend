@@ -233,10 +233,14 @@ public class TraderEngine {
         return s.applicableStages().isEmpty() || s.applicableStages().contains(stage);
     }
 
-    /** 资金层三态：CONFIRM / FILTER_PASS / CONTRA / L2_OFF。 */
+    /**
+     * 资金层信号。L2 关闭时返回 NONE（放行所有战法，按纯技术面决策）；
+     * L2 开启时返回 CONFIRM / FILTER_PASS / CONTRA。
+     * <p>返回值直接写入 sim_trade.capital_confirm（Enum8: NONE/CONFIRM/FILTER_PASS/CONTRA）。
+     */
     private String resolveCapitalSignal(RealtimeFeature f) {
         if (!l2Enabled) {
-            return "L2_OFF";
+            return "NONE";
         }
         double strong = featureCalculator.getNetBuyStrong();
         if (f.getBigNetBuy() >= strong) {
@@ -246,7 +250,8 @@ public class TraderEngine {
     }
 
     private boolean capitalGate(Strategy s, String signal) {
-        if ("L2_OFF".equals(signal)) {
+        // NONE = L2 关闭，资金闸门全开，按纯技术面决策
+        if ("NONE".equals(signal)) {
             return true;
         }
         return switch (s.capitalRole()) {
@@ -305,7 +310,7 @@ public class TraderEngine {
         context.put("isReseal", f.getIsReseal());
         context.put("volBreakout", f.getVolBreakout());
         context.put("pctChg", contextQuotePct(d.getTsCode()));
-        context.put("l2Used", l2Enabled && !"L2_OFF".equals(d.getCapitalSignal()));
+        context.put("l2Used", l2Enabled && !"NONE".equals(d.getCapitalSignal()));
         String contextJson = "{}";
         try {
             contextJson = mapper.writeValueAsString(context);

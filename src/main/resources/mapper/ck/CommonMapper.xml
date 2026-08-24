@@ -4,7 +4,12 @@
 <mapper namespace="com.dunwugudao.replay.mapper.ck.CommonMapper">
 
     <select id="latestTradeDate" resultType="java.time.LocalDate">
-        SELECT max(trade_date) FROM
+        SELECT max(
+        <choose>
+            <when test="table == 'watch_pool'">sel_date</when>
+            <otherwise>trade_date</otherwise>
+        </choose>
+        ) FROM
         <choose>
             <when test="table == 'limit_up_pool'">limit_up_pool FINAL</when>
             <when test="table == 'limit_down_pool'">limit_down_pool FINAL</when>
@@ -14,6 +19,7 @@
             <when test="table == 'mainline_daily'">mainline_daily FINAL</when>
             <when test="table == 'leader_pool_daily'">leader_pool_daily FINAL</when>
             <when test="table == 'theme_factor_daily'">theme_factor_daily FINAL</when>
+            <when test="table == 'watch_pool'">watch_pool FINAL</when>
             <otherwise>limit_up_pool FINAL</otherwise>
         </choose>
     </select>

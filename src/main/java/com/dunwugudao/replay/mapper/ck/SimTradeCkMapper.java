@@ -21,6 +21,9 @@ public interface SimTradeCkMapper {
     /** 指定 ts_code 的全部模拟成交（升序，便于配对买/卖）。 */
     List<SimTradeRow> selectByTsCode(@Param("tsCode") String tsCode);
 
+    /** 批量查多个 ts_code 的全部模拟成交（优化 N+1 查询）。 */
+    List<SimTradeRow> selectByTsCodes(@Param("tsCodes") List<String> tsCodes);
+
     /** 所有 d1_ret 仍为 NULL 的成交（含买入开仓 / 卖出闭环，待回填 T+1 收益）。 */
     List<SimTradeRow> selectWithNullD1();
 

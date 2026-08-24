@@ -17,6 +17,9 @@ public interface DecisionLogCkMapper {
     /** 指定 ts_code 的全部决策（升序，含未执行的 WATCH/HOLD）。 */
     List<DecisionLogRow> selectByTsCode(@Param("tsCode") String tsCode);
 
+    /** 批量查多个 ts_code 的全部决策（优化 N+1 查询）。 */
+    List<DecisionLogRow> selectByTsCodes(@Param("tsCodes") List<String> tsCodes);
+
     /** 指定 ts_code + 仅已执行（executed=1，即真实模拟成交触发的决策）。 */
     List<DecisionLogRow> selectExecutedByTsCode(@Param("tsCode") String tsCode);
 }

@@ -48,6 +48,19 @@
         ORDER BY trade_time ASC
     </select>
 
+    <select id="selectByTsCodes" resultMap="BaseResultMap">
+        SELECT trade_id, order_id, plan_id, ts_code, stock_name, board_code, role,
+               side, price, qty, amount, trade_time, strategy_id, stage_at_entry,
+               capital_confirm, entry_reason, exit_reason, planned_action,
+               pnl, d1_ret, d5_ret, is_trap
+        FROM sim_trade FINAL
+        WHERE ts_code IN
+        <foreach collection="tsCodes" item="c" open="(" separator="," close=")">
+            #{c}
+        </foreach>
+        ORDER BY ts_code ASC, trade_time ASC
+    </select>
+
     <select id="selectWithNullD1" resultMap="BaseResultMap">
         SELECT trade_id, order_id, plan_id, ts_code, stock_name, board_code, role,
                side, price, qty, amount, trade_time, strategy_id, stage_at_entry,

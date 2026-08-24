@@ -19,6 +19,7 @@ import com.dunwugudao.replay.service.SentimentCalculator;
 import com.dunwugudao.replay.service.ThemeFactorCalculator;
 import com.dunwugudao.replay.service.TrendCalculator;
 import com.dunwugudao.replay.sim.AfterCloseSettlement;
+import com.dunwugudao.replay.sim.DailyBatchExecutor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -55,6 +56,7 @@ public class ReplayCalcJob {
     private final LeaderTradeCalculator leaderTradeCalculator;
     private final CkHttpWriter ckHttpWriter;
     private final AfterCloseSettlement afterCloseSettlement;
+    private final DailyBatchExecutor dailyBatchExecutor;
     /** ch 数据源（ClickHouse）。注入用于瞬态故障后强制清空连接池，避免死连接级联污染后续读取步骤。 */
     @Qualifier("ckDataSource")
     private final javax.sql.DataSource ckDataSource;
@@ -113,6 +115,9 @@ public class ReplayCalcJob {
 
         // M2 盘后结算：d1/d5 回填 + exp_log 生成（对接模拟盘数据底座）
         safeStep("M2 盘后结算", () -> afterCloseSettlement.settle(tradeDate));
+
+        // L2 关闭时，日线批量买入：watch_pool 买入信号 → sim_trade + decision_log
+        safeStep("日线批量买入(L2关闭)", () -> dailyBatchExecutor.batchBuy(tradeDate));
 
         log.info("====== 复盘计算结束: {} ======", tradeDate);
     }
