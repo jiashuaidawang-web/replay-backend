@@ -117,6 +117,10 @@ replay:
     # 衍生特征阈值
     net-buy-strong: 2000000   # 近窗口大单净主动买入额 >= 该值 → 资金确认强（元）
     vol-breakout-ratio: 3.0   # 当日成交额 / 过去 N 日均值 >= 该倍 → 放量突破
+    # L2 数据开关（默认关闭）：关闭后交易引擎不再要求资金层 CONFIRM，按纯技术面买卖点决策；
+    # 决策仍正常落库，capital_signal 标记为 L2_OFF，context_json 中 l2_used=false。
+    l2:
+      enabled: false
   # 次日可溯源观察池（watch_pool）：从 S4/S5/S7 捞股同步 Redis pool
   watch-pool:
     s7-min-total: 60          # S7 题材入选阈值（total 分 0~100），低于此分的题材不展开成个股

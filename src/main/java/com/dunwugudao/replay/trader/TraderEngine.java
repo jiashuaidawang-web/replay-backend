@@ -64,6 +64,7 @@ public class TraderEngine {
     private final FeatureCalculator featureCalculator;
     private final CkBufferedWriter ckBuf;
     private final boolean autoExecute;
+    private final boolean l2Enabled;
 
     private final List<Strategy> buyStrategies = DunwuStrategies.buyStrategies();
     private final List<Strategy> sellStrategies = DunwuStrategies.sellStrategies();
@@ -83,7 +84,8 @@ public class TraderEngine {
                         StageSnapshotHolder stageHolder,
                         FeatureCalculator featureCalculator,
                         CkBufferedWriter ckBuf,
-                        @Value("${replay.sim.auto-execute:true}") boolean autoExecute) {
+                        @Value("${replay.sim.auto-execute:true}") boolean autoExecute,
+                        @Value("${replay.stream.l2.enabled:false}") boolean l2Enabled) {
         this.bus = bus;
         this.planPool = planPool;
         this.sim = sim;
@@ -92,6 +94,7 @@ public class TraderEngine {
         this.featureCalculator = featureCalculator;
         this.ckBuf = ckBuf;
         this.autoExecute = autoExecute;
+        this.l2Enabled = l2Enabled;
     }
 
     @PostConstruct
@@ -105,8 +108,8 @@ public class TraderEngine {
                 }
             }
         });
-        log.info("[trader] TraderEngine 就绪：买入战法 {} 条，卖出战法 {} 条，autoExecute={}",
-                buyStrategies.size(), sellStrategies.size(), autoExecute);
+        log.info("[trader] TraderEngine 就绪：买入战法 {} 条，卖出战法 {} 条，autoExecute={}，l2Enabled={}",
+                buyStrategies.size(), sellStrategies.size(), autoExecute, l2Enabled);
     }
 
     private void onFeature(RealtimeFeature f) {
@@ -230,8 +233,11 @@ public class TraderEngine {
         return s.applicableStages().isEmpty() || s.applicableStages().contains(stage);
     }
 
-    /** 资金层三态：CONFIRM / FILTER_PASS / CONTRA。 */
+    /** 资金层三态：CONFIRM / FILTER_PASS / CONTRA / L2_OFF。 */
     private String resolveCapitalSignal(RealtimeFeature f) {
+        if (!l2Enabled) {
+            return "L2_OFF";
+        }
         double strong = featureCalculator.getNetBuyStrong();
         if (f.getBigNetBuy() >= strong) {
             return "CONFIRM";
@@ -240,6 +246,9 @@ public class TraderEngine {
     }
 
     private boolean capitalGate(Strategy s, String signal) {
+        if ("L2_OFF".equals(signal)) {
+            return true;
+        }
         return switch (s.capitalRole()) {
             case IGNORE -> true;
             case FILTER -> !"CONTRA".equals(signal);
@@ -296,6 +305,7 @@ public class TraderEngine {
         context.put("isReseal", f.getIsReseal());
         context.put("volBreakout", f.getVolBreakout());
         context.put("pctChg", contextQuotePct(d.getTsCode()));
+        context.put("l2Used", l2Enabled && !"L2_OFF".equals(d.getCapitalSignal()));
         String contextJson = "{}";
         try {
             contextJson = mapper.writeValueAsString(context);
